@@ -66,8 +66,8 @@ again every time a folder is inspected, `UpdateAdvisor.DescribeOnlineOffer` deci
 | No `ReSkate.dll` (empty or new folder) | `tournament` | Banner: "ReSkate Trainer 0.9.2 (Tournament) is available" and an **Install Tournament Edition** button |
 | No `ReSkate.dll` | no `tournament` | No banner |
 | Tournament 0.9.1 | `tournament` 0.9.2 | Banner: "Update available: 0.9.1 → 0.9.2 (Tournament)" and an **Update** button |
-| Tournament 0.9.2 | `tournament` 0.9.2, any build | No banner. The status line says you have the newest version. |
-| Tournament 0.9.5 | `tournament` 0.9.2 | No banner, and no downgrade is offered |
+| Tournament 0.9.2 | `tournament` 0.9.2, any build | Banner: "You're running the newest version", with a greyed-out **Up to date** button |
+| Tournament 0.9.5 | `tournament` 0.9.2 | Banner: "Your version is newer than the published one", greyed out. No downgrade is offered. |
 | Standard edition, any version | only `tournament` | No banner. Dropping a zip still works. |
 | Plain ReSkate, no Trainer | anything | No banner |
 | A `ReSkate.dll` that can't be read | anything | No banner |

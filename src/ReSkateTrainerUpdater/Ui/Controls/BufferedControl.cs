@@ -50,6 +50,42 @@ internal abstract class BufferedControl : Control
         g.DrawPath(pen, path);
     }
 
+    /// <summary>
+    /// Draws a pill: a rounded capsule tinted with <paramref name="accent"/>, a dot, and the text in the accent colour.
+    /// The text is shortened with "..." if it doesn't fit in <paramref name="maxWidth"/>. Returns where it was drawn.
+    /// </summary>
+    protected Rectangle DrawPill(Graphics g, int x, int y, string text, Color accent, int maxWidth)
+    {
+        int height = (int)S(26);
+        int padX = (int)S(11);
+        int dotSpace = (int)S(15);
+
+        var measured = TextRenderer.MeasureText(g, text, Theme.Pill, new Size(int.MaxValue, height),
+            TextFormatFlags.NoPadding | TextFormatFlags.SingleLine);
+        int width = Math.Max(height, Math.Min(maxWidth, measured.Width + padX * 2 + dotSpace));
+        var rect = new Rectangle(x, y, width, height);
+
+        var outline = new RectangleF(rect.X + 0.5f, rect.Y + 0.5f, rect.Width - 1.5f, rect.Height - 1.5f);
+        using (var path = Theme.RoundedRect(outline, height / 2f))
+        using (var fill = new SolidBrush(Color.FromArgb(40, accent)))
+        using (var pen = new Pen(Color.FromArgb(120, accent)))
+        {
+            g.FillPath(fill, path);
+            g.DrawPath(pen, path);
+        }
+
+        float dot = S(7);
+        using (var brush = new SolidBrush(accent))
+        {
+            g.FillEllipse(brush, rect.X + padX, rect.Y + (height - dot) / 2f, dot, dot);
+        }
+
+        int textX = rect.X + padX + dotSpace;
+        TextRenderer.DrawText(g, text, Theme.Pill,
+            new Rectangle(textX, rect.Y, Math.Max(0, rect.Right - padX - textX), height), accent, LeftFlags);
+        return rect;
+    }
+
     protected void DrawDownloadGlyph(Graphics g, float cx, float cy, Color color, float penWidth)
     {
         using var pen = new Pen(color, penWidth)

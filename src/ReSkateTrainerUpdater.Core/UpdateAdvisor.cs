@@ -91,7 +91,7 @@ public static class UpdateAdvisor
         if (folder.HasRuntime && folder.Installed is { } installed)
         {
             return installed.HasTrainer
-                ? ($"Installed: ReSkate Trainer {installed.TrainerText} · ReSkate {installed.BaseVersion ?? "?"}", Severity.Good)
+                ? ($"Installed: Trainer {installed.TrainerText} · ReSkate {installed.BaseVersion ?? "?"}", Severity.Good)
                 : ($"Installed: ReSkate {installed.BaseVersion ?? "?"} (no Trainer yet)", Severity.Neutral);
         }
 
@@ -100,6 +100,16 @@ public static class UpdateAdvisor
         if (folder.IsEmpty) return ("Empty folder: this will be a fresh install.", Severity.Neutral);
         return ("No ReSkate found in this folder yet.", Severity.Warning);
     }
+
+    /// <summary>The word shown in the coloured pill beside a message of this severity.</summary>
+    public static string PillLabel(Severity severity) => severity switch
+    {
+        Severity.Working => "Working",
+        Severity.Good => "All good",
+        Severity.Warning => "Heads up",
+        Severity.Error => "Problem",
+        _ => "Info",
+    };
 
     // The status line before any zip is chosen. The online banner, when shown, is the quicker route.
     private static Advice DescribeNoZip(OnlineOffer? offer) => offer?.Kind switch
@@ -130,7 +140,7 @@ public static class UpdateAdvisor
             return new OnlineOffer(
                 OfferKind.FreshInstall,
                 fresh,
-                $"ReSkate Trainer {fresh.TrainerText} is available",
+                $"{fresh.EditionName} {fresh.Version} is available",
                 DetailFor(fresh),
                 $"Install {fresh.EditionName} Edition");
         }
@@ -150,22 +160,27 @@ public static class UpdateAdvisor
                 "Update");
         }
 
+        // Nothing to download. Say so, rather than hiding the banner, so the user gets a confirmation.
+        bool newerThanPublished = VersionCompare.Compare(installed.TrainerVersion, latest.Version) > 0;
         return new OnlineOffer(
             OfferKind.UpToDate,
             latest,
-            $"You have the newest {latest.EditionName} version ({installed.TrainerVersion}).",
-            "",
-            "");
+            newerThanPublished
+                ? "Your version is newer than the published one"
+                : "You're running the newest version",
+            newerThanPublished
+                ? $"You have {installed.TrainerVersion}. The newest published is {latest.TrainerText}."
+                : $"ReSkate Trainer {installed.TrainerText} is the latest published.",
+            "Up to date");
     }
 
     private static string DetailFor(ManifestEntry entry)
     {
         var parts = new List<string>();
-        if (entry.ReSkateVersion is not null) parts.Add("built on ReSkate " + entry.ReSkateVersion);
+        if (entry.ReSkateVersion is not null) parts.Add("ReSkate " + entry.ReSkateVersion);
         parts.Add(ByteSize.Format(entry.SizeBytes));
-        parts.Add("checked before installing");
-        var text = string.Join(" · ", parts);
-        return char.ToUpperInvariant(text[0]) + text[1..];
+        parts.Add("verified before install");
+        return string.Join(" · ", parts);
     }
 
     /// <summary>The activity-log line after the start-up check of latest.json.</summary>

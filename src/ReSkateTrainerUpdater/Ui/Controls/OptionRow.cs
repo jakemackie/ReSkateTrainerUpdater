@@ -105,8 +105,8 @@ internal sealed class OptionRow : BufferedControl
         int left = (int)S(18);
         int width = Math.Max(0, (int)(trackX - S(14)) - left);
         TextRenderer.DrawText(g, Title, Theme.Semibold,
-            new Rectangle(left, (int)S(9), width, (int)S(20)), Theme.Text, LeftFlags);
+            new Rectangle(left, (int)S(11), width, (int)S(22)), Theme.Text, LeftFlags);
         TextRenderer.DrawText(g, Description, Theme.Small,
-            new Rectangle(left, (int)S(30), width, (int)S(18)), Theme.Muted, LeftFlags);
+            new Rectangle(left, (int)S(35), width, (int)S(20)), Theme.Muted, LeftFlags);
     }
 }

@@ -13,7 +13,7 @@ internal sealed class HeaderBar : BufferedControl
     {
         var g = Prepare(e);
 
-        int size = (int)S(44);
+        int size = (int)S(48);
         if (_logo == null || _logoSize != size)
         {
             _logo?.Dispose();
@@ -21,7 +21,7 @@ internal sealed class HeaderBar : BufferedControl
             _logoSize = size;
         }
 
-        var logoRect = new RectangleF(0, S(10), size, size);
+        var logoRect = new RectangleF(0, S(12), size, size);
         using (var clip = Theme.RoundedRect(logoRect, S(10)))
         {
             if (_logo != null)
@@ -40,9 +40,9 @@ internal sealed class HeaderBar : BufferedControl
 
         int tx = (int)(size + S(14));
         TextRenderer.DrawText(g, AppInfo.Name, Theme.Title,
-            new Rectangle(tx, (int)S(8), Math.Max(0, Width - tx), (int)S(26)), Theme.Text, LeftFlags);
+            new Rectangle(tx, (int)S(10), Math.Max(0, Width - tx), (int)S(30)), Theme.Text, LeftFlags);
         TextRenderer.DrawText(g, AppInfo.Tagline, Theme.Body,
-            new Rectangle(tx, (int)S(35), Math.Max(0, Width - tx), (int)S(20)), Theme.Muted, LeftFlags);
+            new Rectangle(tx, (int)S(41), Math.Max(0, Width - tx), (int)S(22)), Theme.Muted, LeftFlags);
     }
 
     protected override void Dispose(bool disposing)

@@ -53,7 +53,7 @@ public enum OfferKind
     /// <summary>The installed edition has a newer version in latest.json.</summary>
     Update,
 
-    /// <summary>The installed edition is already the newest in latest.json, or newer. No banner is shown.</summary>
+    /// <summary>The installed edition is already the newest in latest.json, or newer. The banner is shown with its button greyed out.</summary>
     UpToDate,
 }
 
@@ -67,6 +67,9 @@ public sealed record OnlineOffer(OfferKind Kind, ManifestEntry? Entry, string Ti
 {
     public static OnlineOffer Nothing { get; } = new(OfferKind.None, null, "", "", "");
 
-    /// <summary>True when the banner should be shown with a button.</summary>
+    /// <summary>True when the banner's button can be clicked to download.</summary>
     public bool CanDownload => Kind is OfferKind.FreshInstall or OfferKind.Update && Entry is not null;
+
+    /// <summary>True when the banner is shown at all. When <see cref="CanDownload"/> is false its button is greyed out.</summary>
+    public bool ShowBanner => Kind != OfferKind.None;
 }

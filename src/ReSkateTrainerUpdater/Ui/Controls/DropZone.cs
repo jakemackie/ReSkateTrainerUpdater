@@ -88,7 +88,7 @@ internal sealed class DropZone : BufferedControl
         DrawFocusRing(g, rect, S(14));
 
         float iconSize = S(40);
-        float blockHeight = iconSize + S(6) + S(22) + S(18);
+        float blockHeight = iconSize + S(8) + S(24) + S(20);
         float top = Math.Max(S(6), (Height - blockHeight) / 2f);
         float cx = Width / 2f;
         float cy = top + iconSize / 2f;
@@ -123,8 +123,8 @@ internal sealed class DropZone : BufferedControl
         }
 
         int pad = (int)S(16);
-        var titleRect = new Rectangle(pad, (int)(top + iconSize + S(6)), Math.Max(0, Width - pad * 2), (int)S(22));
-        var subRect = new Rectangle(pad, (int)(top + iconSize + S(28)), Math.Max(0, Width - pad * 2), (int)S(18));
+        var titleRect = new Rectangle(pad, (int)(top + iconSize + S(8)), Math.Max(0, Width - pad * 2), (int)S(24));
+        var subRect = new Rectangle(pad, (int)(top + iconSize + S(32)), Math.Max(0, Width - pad * 2), (int)S(20));
 
         TextRenderer.DrawText(g, _title, Theme.Semibold, titleRect, Theme.Text, CenterFlags);
         TextRenderer.DrawText(g, _sub, Theme.Small, subRect, Theme.Muted, CenterFlags);

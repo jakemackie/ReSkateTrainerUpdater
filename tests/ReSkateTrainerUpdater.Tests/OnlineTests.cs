@@ -171,9 +171,9 @@ internal static class OnlineTests
 
         var fresh = UpdateAdvisor.DescribeOnlineOffer(manifest, Folder(null, hasRuntime: false));
         Check("An empty folder is offered the Tournament Edition",
-            fresh is { Kind: OfferKind.FreshInstall, CanDownload: true, ButtonText: "Install Tournament Edition" } && fresh.Title.Contains("0.9.2 (Tournament)"),
+            fresh is { Kind: OfferKind.FreshInstall, CanDownload: true, ButtonText: "Install Tournament Edition" } && fresh.Title == "Tournament 0.9.2 is available",
             fresh.Title);
-        Check("The offer names the size and that it is checked", fresh.Detail.Contains("checked before installing"), fresh.Detail);
+        Check("The offer names the ReSkate version, the size and that it is verified", fresh.Detail == "ReSkate 2.1.1 · 1000 B · verified before install", fresh.Detail);
         Check("An empty folder gets nothing if Tournament isn't published",
             UpdateAdvisor.DescribeOnlineOffer(new TrainerManifest().With(Entry(edition: "big-air")), Folder(null, hasRuntime: false)).Kind == OfferKind.None);
 
@@ -185,9 +185,16 @@ internal static class OnlineTests
             UpdateAdvisor.DescribeOnlineOffer(new TrainerManifest().With(Entry(version: "0.10.0")), Folder(Tournament("0.9.2"))).Kind == OfferKind.Update);
 
         var same = UpdateAdvisor.DescribeOnlineOffer(manifest, Folder(Tournament("0.9.2")));
-        Check("The newest Tournament is up to date with no button", same is { Kind: OfferKind.UpToDate, CanDownload: false });
+        Check("The newest Tournament shows a greyed-out banner, not nothing",
+            same is { Kind: OfferKind.UpToDate, CanDownload: false, ShowBanner: true, ButtonText: "Up to date" });
+        Check("The up-to-date banner confirms it in words",
+            same.Title == "You're running the newest version" && same.Detail.Contains("0.9.2 (Tournament)") && same.Detail.Contains("latest published"), same.Title + " / " + same.Detail);
+        var ahead = UpdateAdvisor.DescribeOnlineOffer(manifest, Folder(Tournament("0.9.5")));
         Check("A newer local Tournament is not offered a downgrade",
-            UpdateAdvisor.DescribeOnlineOffer(manifest, Folder(Tournament("0.9.5"))) is { Kind: OfferKind.UpToDate, CanDownload: false });
+            ahead is { Kind: OfferKind.UpToDate, CanDownload: false, ShowBanner: true });
+        Check("A newer local Tournament says so", ahead.Title.Contains("newer") && ahead.Detail.Contains("0.9.5"), ahead.Title + " / " + ahead.Detail);
+        Check("Only the offers with nothing to say hide the banner",
+            !OnlineOffer.Nothing.ShowBanner && update.ShowBanner && fresh.ShowBanner);
 
         var standard = new ReSkateVersion("2.1.1", "ReSkate", "0.9.1", "aaaaaaa", null);
         Check("The standard edition gets no Tournament offer", UpdateAdvisor.DescribeOnlineOffer(manifest, Folder(standard)).Kind == OfferKind.None);
@@ -210,6 +217,12 @@ internal static class OnlineTests
         var everyFailure = Enum.GetValues<DownloadFailure>().Where(f => f != DownloadFailure.None).Select(UpdateAdvisor.DescribeDownloadFailure).ToList();
         Check("Every download failure says nothing was changed", everyFailure.All(a => a.Message.Contains("Nothing was changed")));
         Check("A hash mismatch is an error", UpdateAdvisor.DescribeDownloadFailure(DownloadFailure.HashMismatch).Severity == Severity.Error);
+
+        Section("Pill labels");
+        var labels = Enum.GetValues<Severity>().Select(UpdateAdvisor.PillLabel).ToList();
+        Check("Every severity has its own short pill label", labels.Distinct().Count() == labels.Count && labels.All(l => l.Length is > 0 and <= 10), string.Join(", ", labels));
+        Check("Good, warning and error read plainly",
+            UpdateAdvisor.PillLabel(Severity.Good) == "All good" && UpdateAdvisor.PillLabel(Severity.Warning) == "Heads up" && UpdateAdvisor.PillLabel(Severity.Error) == "Problem");
     }
 
     // ---------- Downloading ----------

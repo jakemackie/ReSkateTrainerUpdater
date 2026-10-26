@@ -24,7 +24,7 @@ internal sealed class UpdaterForm : Form
     };
     private readonly RoundedButton _installButton = new() { Text = InstallText, Primary = true };
     private readonly ProgressStrip _progress = new();
-    private readonly Label _status = new();
+    private readonly StatusLine _status = new();
     private readonly TextBox _log = new();
 
     private const string InstallText = "Install update";
@@ -47,7 +47,7 @@ internal sealed class UpdaterForm : Form
     private TrainerManifest? _manifest;
     private OnlineOffer _offer = OnlineOffer.Nothing;
     private RowStyle? _bannerRow;
-    private const float BannerHeight = 84f;
+    private const float BannerHeight = 96f;
 
     // The outcome of the last install, shown until the user changes something.
     private Advice? _result;
@@ -61,8 +61,8 @@ internal sealed class UpdaterForm : Form
         BackColor = Theme.Bg;
         ForeColor = Theme.Text;
         Font = Theme.Body;
-        ClientSize = new Size(580, 780);
-        MinimumSize = new Size(520, 720);
+        ClientSize = new Size(680, 850);
+        MinimumSize = new Size(640, 780);
         StartPosition = FormStartPosition.CenterScreen;
 
         if (AppIcon.Load() is { } icon) Icon = icon;
@@ -148,14 +148,6 @@ internal sealed class UpdaterForm : Form
         folderRow.Controls.Add(_browseButton, 1, 0);
 
         // Status line (can wrap onto two lines).
-        _status.AutoSize = false;
-        _status.TextAlign = ContentAlignment.TopLeft;
-        _status.BackColor = Theme.Bg;
-        _status.ForeColor = Theme.Muted;
-        _status.Font = Theme.Body;
-        _status.Padding = new Padding(2, 4, 0, 0);
-        _status.UseMnemonic = false;
-
         // Activity log inside a rounded card.
         _log.Multiline = true;
         _log.ReadOnly = true;
@@ -170,18 +162,18 @@ internal sealed class UpdaterForm : Form
         var logCard = new CardPanel();
         logCard.Controls.Add(_log);
 
-        AddRow(layout, _header, 64);
+        AddRow(layout, _header, 76);
         _bannerRow = AddRow(layout, _banner, BannerHeight, new Padding(0, 4, 0, 6));
         ShowBanner(false);
-        AddRow(layout, SectionLabel("UPDATE FILE (.ZIP)"), 28);
-        AddRow(layout, _drop, 104);
-        AddRow(layout, SectionLabel("YOUR RESKATE FOLDER"), 34);
-        AddRow(layout, folderRow, 86, new Padding(0, 0, 0, 14));
-        AddRow(layout, _backupRow, 62, new Padding(0, 0, 0, 8));
-        AddRow(layout, _installButton, 60, new Padding(0, 10, 0, 0));
+        AddRow(layout, SectionLabel("UPDATE FILE (.ZIP)"), 32);
+        AddRow(layout, _drop, 118);
+        AddRow(layout, SectionLabel("YOUR RESKATE FOLDER"), 38);
+        AddRow(layout, folderRow, 114, new Padding(0, 0, 0, 14));
+        AddRow(layout, _backupRow, 70, new Padding(0, 0, 0, 8));
+        AddRow(layout, _installButton, 62, new Padding(0, 10, 0, 0));
         AddRow(layout, _progress, 10);
-        AddRow(layout, _status, 48);
-        AddRow(layout, SectionLabel("ACTIVITY"), 28);
+        AddRow(layout, _status, 60, new Padding(0, 4, 0, 0));
+        AddRow(layout, SectionLabel("ACTIVITY"), 32);
         AddRow(layout, logCard, 0); // 0 = take all the remaining space
 
         Controls.Add(layout);
@@ -433,8 +425,7 @@ internal sealed class UpdaterForm : Form
         _installButton.Enabled = advice.CanInstall;
 
         var shown = _result ?? advice;
-        _status.Text = shown.Message;
-        _status.ForeColor = Theme.ForSeverity(shown.Severity);
+        _status.Show(shown);
     }
 
     private void Log(string message) => _log.AppendText(message + "\r\n");
@@ -462,11 +453,17 @@ internal sealed class UpdaterForm : Form
     // Works out what the banner offers for the current folder, then refreshes the status line.
     private void RefreshOffer()
     {
-        if (!_installing)
+        if (_checkingFolder)
         {
-            _offer = UpdateAdvisor.DescribeOnlineOffer(_manifest, _checkingFolder ? null : _folderInfo);
-            if (_offer.CanDownload) _banner.SetOffer(_offer.Title, _offer.Detail, _offer.ButtonText);
-            ShowBanner(_offer.CanDownload);
+            // Keep the banner where it is, but not clickable, until we know what the new folder holds.
+            _banner.SetBusy(true);
+        }
+        else if (!_installing)
+        {
+            _offer = UpdateAdvisor.DescribeOnlineOffer(_manifest, _folderInfo);
+            if (_offer.ShowBanner) _banner.SetOffer(_offer.Title, _offer.Detail, _offer.ButtonText, _offer.CanDownload);
+            ShowBanner(_offer.ShowBanner);
+            _banner.SetBusy(false);
         }
         RefreshStatus();
     }
@@ -484,13 +481,13 @@ internal sealed class UpdaterForm : Form
     /// </summary>
     private async Task OnlineInstallAsync()
     {
-        if (_installing || _offer is not { CanDownload: true, Entry: { } entry } || _folder is null) return;
+        if (_installing || _checkingFolder || _offer is not { CanDownload: true, Entry: { } entry } || _folder is null) return;
 
         string buttonText = _offer.ButtonText;
         _installing = true;
         _result = null;
         _installButton.Enabled = false;
-        _banner.ButtonEnabled = false;
+        _banner.SetBusy(true);
         _banner.SetButtonText("Downloading...");
         _progress.Active = true;
         _log.Clear();
@@ -543,7 +540,7 @@ internal sealed class UpdaterForm : Form
         _installing = false;
         _progress.Active = false;
         _banner.SetButtonText(buttonText);
-        _banner.ButtonEnabled = true;
+        _banner.SetBusy(false);
 
         if (package is null)
         {
@@ -600,7 +597,7 @@ internal sealed class UpdaterForm : Form
         _result = null;
         _installButton.Enabled = false;
         _installButton.Text = "Installing...";
-        _banner.ButtonEnabled = false;
+        _banner.SetBusy(true);
         _progress.Active = true;
         if (clearLog) _log.Clear();
         ShowStatus(new Advice("Installing... please don't close the app.", Severity.Working));
@@ -628,7 +625,7 @@ internal sealed class UpdaterForm : Form
             _installing = false;
             _progress.Active = false;
             _installButton.Text = InstallText;
-            _banner.ButtonEnabled = true;
+            _banner.SetBusy(false);
         }
 
         RefreshStatus();
@@ -637,8 +634,7 @@ internal sealed class UpdaterForm : Form
 
     private void ShowStatus(Advice advice)
     {
-        _status.Text = advice.Message;
-        _status.ForeColor = Theme.ForSeverity(advice.Severity);
+        _status.Show(advice);
     }
 
     private void LogResult(InstallResult result)

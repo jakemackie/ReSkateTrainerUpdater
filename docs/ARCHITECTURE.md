@@ -121,7 +121,8 @@ start-up ──► FetchManifestAsync ──► TrainerManifest.Parse ──► 
 
 folder inspected or manifest arrives ──► UpdateAdvisor.DescribeOnlineOffer(manifest, folder)
                                               ──► OnlineOffer: None | FreshInstall | Update | UpToDate
-                                              ──► banner shown only for FreshInstall and Update
+                                              ──► banner shown for FreshInstall and Update (button live)
+                                                  and UpToDate (button greyed out); hidden for None
 
 banner button clicked ──► TrainerDownloader.DownloadAsync(entry)
                               1. IsTrustedDownloadUrl(entry.Url), or refuse without a request

@@ -65,21 +65,18 @@ internal sealed class PathCard : BufferedControl
         int tx = (int)S(54);
         int tw = Math.Max(0, Width - tx - (int)S(14));
         string name = has ? FolderName(_folder!) : "Choose your ReSkate folder";
-        string sub = has ? _folder! : "The folder where ReSkateLauncher.exe lives (or a new empty one)";
+        string sub = has ? _folder! : "Where ReSkateLauncher.exe lives, or a new empty folder";
 
         bool three = has && _installed != null;
-        int nameY = three ? (int)S(8) : (int)S(14);
-        int subY = three ? (int)S(28) : (int)S(36);
+        int nameY = three ? (int)S(11) : (int)S(22);
+        int subY = three ? (int)S(34) : (int)S(48);
 
         TextRenderer.DrawText(g, name, Theme.Semibold,
-            new Rectangle(tx, nameY, tw, (int)S(20)), Theme.Text, LeftFlags);
+            new Rectangle(tx, nameY, tw, (int)S(22)), Theme.Text, LeftFlags);
         TextRenderer.DrawText(g, sub, Theme.Small,
-            new Rectangle(tx, subY, tw, (int)S(18)), Theme.Muted, LeftPathFlags);
+            new Rectangle(tx, subY, tw, (int)S(20)), Theme.Muted, LeftPathFlags);
 
-        if (three)
-        {
-            TextRenderer.DrawText(g, _installed!, Theme.Small,
-                new Rectangle(tx, (int)S(46), tw, (int)S(18)), _installedColor, LeftFlags);
-        }
+        // What is installed here, as a pill coloured by how good the news is.
+        if (three) DrawPill(g, tx, (int)S(64), _installed!, _installedColor, tw);
     }
 }

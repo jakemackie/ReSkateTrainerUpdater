@@ -19,13 +19,14 @@ internal static class Theme
     public static readonly Color Warning = Color.FromArgb(255, 190, 80);
     public static readonly Color Danger = Color.FromArgb(255, 107, 107);
 
-    public static readonly Font Body = new("Segoe UI", 9.5f);
-    public static readonly Font Small = new("Segoe UI", 8.5f);
-    public static readonly Font Semibold = new("Segoe UI Semibold", 10f);
-    public static readonly Font ButtonFont = new("Segoe UI Semibold", 10.5f);
-    public static readonly Font Title = new("Segoe UI Semibold", 17f);
-    public static readonly Font Label = new("Segoe UI Semibold", 8f);
-    public static readonly Font Mono = new("Consolas", 9f);
+    public static readonly Font Body = new("Segoe UI", 10.5f);
+    public static readonly Font Small = new("Segoe UI", 9.5f);
+    public static readonly Font Semibold = new("Segoe UI Semibold", 11f);
+    public static readonly Font ButtonFont = new("Segoe UI Semibold", 11.5f);
+    public static readonly Font Title = new("Segoe UI Semibold", 19f);
+    public static readonly Font Label = new("Segoe UI Semibold", 9f);
+    public static readonly Font Pill = new("Segoe UI Semibold", 9.5f);
+    public static readonly Font Mono = new("Consolas", 10f);
 
     /// <summary>The colour that goes with a message of the given severity.</summary>
     public static Color ForSeverity(Severity severity) => severity switch
