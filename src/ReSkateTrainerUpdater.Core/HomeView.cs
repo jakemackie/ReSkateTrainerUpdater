@@ -78,6 +78,12 @@ public sealed record HomeView(
     IReadOnlyList<StatusRow> Rows,
     ActionTile Tile);
 
+/// <summary>The small chip in the top-left corner, like the launcher's "Welcome" chip: a dot, a title and a line under it.</summary>
+/// <param name="Title">For example "Connected to GitHub".</param>
+/// <param name="Subtitle">For example "v1.1.2 · Unofficial helper".</param>
+/// <param name="Severity">Colours the dot: green when connected, grey when not.</param>
+public sealed record ChipView(string Title, string Subtitle, Severity Severity);
+
 /// <summary>What the app is busy doing, for <see cref="UpdateAdvisor.DescribeBusy"/>.</summary>
 public enum BusyStage
 {

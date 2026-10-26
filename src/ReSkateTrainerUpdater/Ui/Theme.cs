@@ -17,6 +17,8 @@ internal static class Theme
     public static readonly Color Control = Color.FromArgb(45, 45, 47);
     public static readonly Color ControlHover = Color.FromArgb(60, 60, 63);
     public static readonly Color Divider = Color.FromArgb(48, 48, 50);
+    public static readonly Color Chip = Color.FromArgb(45, 49, 53);
+    public static readonly Color WindowBorder = Color.FromArgb(52, 53, 58);
 
     public static readonly Color Text = Color.FromArgb(255, 255, 255);
     public static readonly Color TextSoft = Color.FromArgb(222, 222, 226);
@@ -33,7 +35,7 @@ internal static class Theme
     public static readonly Color Ink = Color.FromArgb(8, 9, 12);
 
     // The big marker-pen headings.
-    public static readonly Font Display = GameFonts.Create(GameFonts.Marker, "Segoe UI Black", 30f);
+    public static readonly Font Wordmark = GameFonts.Create(GameFonts.Marker, "Segoe UI Black", 38f);
     public static readonly Font Tile64 = GameFonts.Create(GameFonts.Marker, "Segoe UI Black", 52f);
 
     // Montserrat, as in the launcher: ExtraBold for titles and labels, SemiBold for sentences.

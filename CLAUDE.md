@@ -72,71 +72,76 @@ weakens the download checks, or breaks the release process.
    the launcher and kept in `Theme`. Montserrat for text, and Permanent Marker only for the big headings (the
    window title and the action tile). Status is shown with filled pills (`BufferedControl.DrawPill`) and round icons
    (`DrawStatusIcon`), never with tiny coloured text. Don't add rounded cards, gradients or drop shadows.
-6. **Draw text with `TextPaint`, never `TextRenderer` or `Label`.** The launcher's fonts are loaded into GDI+ from
+6. **The window has no title bar, like the launcher's.** `UpdaterForm` is borderless (`FormBorderStyle.None`) with a
+   fixed size. The corner buttons are `WindowButtons` (minimise and close only, no maximise), the window is moved by
+   dragging any empty area (`MakeDraggable`), and `NativeMethods.ApplyWindowFrame` asks Windows for rounded corners,
+   a thin border and a shadow. Keep the `CreateParams` override: without the minimise and system-menu styles,
+   clicking the taskbar button no longer minimises the window. Don't put the native title bar back.
+7. **Draw text with `TextPaint`, never `TextRenderer` or `Label`.** The launcher's fonts are loaded into GDI+ from
    resources embedded in the exe (`GameFonts`), and only GDI+ can see them. Don't add `StringFormatFlags.LineLimit`:
    the marker font's lines are taller than its glyphs, and that flag silently hides text that doesn't fit whole.
-7. **Keep `THIRD-PARTY-NOTICES.md` in the release zip** (`build-release.ps1` does this). The font licences require it.
+8. **Keep `THIRD-PARTY-NOTICES.md` in the release zip** (`build-release.ps1` does this). The font licences require it.
    If you add a font, image or library, add its licence there.
 
 ### The ReSkate folder
 
-8. **Only `TrainerInstaller.Install` writes to the user's ReSkate folder.** Nothing else may create, change or
+9. **Only `TrainerInstaller.Install` writes to the user's ReSkate folder.** Nothing else may create, change or
    delete files there.
-9. **Keep the install guarantees** (see `docs/ARCHITECTURE.md`): check write access and locked files before
+10. **Keep the install guarantees** (see `docs/ARCHITECTURE.md`): check write access and locked files before
    changing anything, write each file as `<name>.updating` and then move it into place, save every replaced file
    first, and put everything back if any step fails. Any change to `TrainerInstaller` must keep every
    `Invariant:` check in `InstallerTests.cs` passing.
 
 ### Online updates
 
-10. **`OnlineSource` is the only place that names a URL, owner, repository or branch.** Do not write
+11. **`OnlineSource` is the only place that names a URL, owner, repository or branch.** Do not write
    `github.com` or `raw.githubusercontent.com` anywhere else in `src/`.
-11. **Never weaken `OnlineSource.IsTrustedDownloadUrl`.** It only accepts
+12. **Never weaken `OnlineSource.IsTrustedDownloadUrl`.** It only accepts
    `https://github.com/jakemackie/ReSkateTrainerUpdater/releases/download/<tag>/<file>.zip`.
    `TrainerDownloader.DownloadAsync` checks it again before every request. Do not add other hosts, mirrors,
    http, or a setting that overrides it.
-12. **A downloaded zip reaches `TrainerInstaller` only after all three checks pass**: the exact size from
+13. **A downloaded zip reaches `TrainerInstaller` only after all three checks pass**: the exact size from
    `latest.json`, the exact SHA-256 from `latest.json`, and `TrainerDownloader.CheckPackageMatches`, which
    confirms the version, edition and build inside the DLL. On any failure the download is deleted and the folder
    is not touched.
-13. **Never install without a click.** The app may tell the user an update exists. It must never download or
+14. **Never install without a click.** The app may tell the user an update exists. It must never download or
    install a Trainer on its own.
-14. **Network failures are silent.** If `latest.json` can't be fetched or read, the status card says it couldn't
+15. **Network failures are silent.** If `latest.json` can't be fetched or read, the status card says it couldn't
     check (a calm grey "OFFLINE" pill) and one line goes to the activity log. No dialogs and no error colours.
     Dropping a zip must keep working with no internet.
-15. **No telemetry.** The app sends two kinds of request only: a GET for `latest.json` on start-up, and a GET
+16. **No telemetry.** The app sends two kinds of request only: a GET for `latest.json` on start-up, and a GET
     for the zip when the user clicks the big tile. The only header added is the User-Agent
     `ReSkateTrainerUpdater/<version>`. Don't add analytics, IDs, crash reporting, or anything else.
 
 ### latest.json
 
-16. **Change `latest.json` only with the manifest tool** (`add`). The tests fail if the committed file isn't
+17. **Change `latest.json` only with the manifest tool** (`add`). The tests fail if the committed file isn't
     valid or isn't byte-for-byte in the tool's canonical format. Never type a hash by hand.
-17. **Adding an optional field** to a manifest entry doesn't need a schema change, because old apps ignore unknown
+18. **Adding an optional field** to a manifest entry doesn't need a schema change, because old apps ignore unknown
     fields. Update `ManifestEntry`, `TrainerManifest.Parse`, `CheckEntry` and `ToJson` together, and add tests.
     **A breaking change** (renaming or removing a field, or changing what one means) needs
     `TrainerManifest.SupportedSchemaVersion` raised. Older apps then ignore the file and show nothing, which is
     the safe failure. Publish the new app before you push a manifest in the new format.
-18. **The format is documented in `docs/ONLINE-UPDATES.md`.** Keep that file in step with the code.
+19. **The format is documented in `docs/ONLINE-UPDATES.md`.** Keep that file in step with the code.
 
 ### Releases, versions and files
 
-19. **The app version lives only in `Directory.Build.props`** (`<Version>`). `scripts/build-release.ps1` and
+20. **The app version lives only in `Directory.Build.props`** (`<Version>`). `scripts/build-release.ps1` and
     the Release workflow read it from there.
-20. **Tags starting with `v` are app releases only.** Pushing `v1.2.0` runs `.github/workflows/release.yml`,
+21. **Tags starting with `v` are app releases only.** Pushing `v1.2.0` runs `.github/workflows/release.yml`,
     which fails unless the tag matches `<Version>`. Trainer zips use tags like `trainer-tournament-0.9.2`. The
     manifest tool refuses a Trainer tag that starts with `v`.
-21. **Never commit zips, exes or DLLs.** Trainer zips are GitHub Release assets only (`docs/RELEASING.md`
+22. **Never commit zips, exes or DLLs.** Trainer zips are GitHub Release assets only (`docs/RELEASING.md`
     explains why). `.gitignore` already excludes `bin/`, `obj/`, `release/` and `publish/`.
-22. **`TreatWarningsAsErrors` is on** in `Directory.Build.props`. Fix the warning. Don't suppress it with
+23. **`TreatWarningsAsErrors` is on** in `Directory.Build.props`. Fix the warning. Don't suppress it with
     `#pragma`, `NoWarn`, or by turning the setting off.
 
 ### Tests
 
-23. **The test project is a plain console runner with no packages.** Write a check as
+24. **The test project is a plain console runner with no packages.** Write a check as
     `Check("plain-English statement of what is true", condition, detailShownOnFailure)` inside a
     `Section(...)`. Prefix checks that guard a safety guarantee with `Invariant:`.
-24. **Tests never use the real network or real game files.** Use `FakeServer` (in `OnlineTests.cs`) for HTTP,
+25. **Tests never use the real network or real game files.** Use `FakeServer` (in `OnlineTests.cs`) for HTTP,
     and `FakeBinary.Pe(...)` / `FakeBinary.WriteRelease(...)` (in `Fixtures.cs`) for ReSkate binaries.
 
 ## Where things are
@@ -155,7 +160,8 @@ weakens the download checks, or breaks the release process.
 | `src/ReSkateTrainerUpdater.Core/Advice.cs` | `Advice`, `Severity`, `UpdateContext`, `OnlineOffer`, `OfferKind` |
 | `src/ReSkateTrainerUpdater.Core/UpdaterSettings.cs` | `%AppData%\ReSkateTrainerUpdater\settings.json` |
 | `src/ReSkateTrainerUpdater/Ui/UpdaterForm.cs` | The window. Wiring and drawing a `HomeView`, nothing else. |
-| `src/ReSkateTrainerUpdater/Ui/Controls/` | The controls: `StatusCard`, `ActionTileControl` (the big tile), `InfoTile` (folder and zip), `OptionRow`, `SquareButton`, `HeaderBar` |
+| `src/ReSkateTrainerUpdater/Ui/Controls/` | The controls: `StatusCard`, `ActionTileControl` (the big tile), `InfoTile` (folder and zip), `OptionRow`, `SquareButton`, `HeaderBar` (chip and wordmark), `WindowButtons` (minimise and close) |
+| `src/ReSkateTrainerUpdater/Ui/NativeMethods.cs` | Window frame (rounded corners, border, shadow), dragging, dark scrollbars |
 | `src/ReSkateTrainerUpdater/Ui/Theme.cs` | The launcher's colours and fonts |
 | `src/ReSkateTrainerUpdater/Ui/GameFonts.cs`, `TextPaint.cs` | Loading the embedded fonts, and drawing text with them |
 | `src/ReSkateTrainerUpdater/Assets/Fonts/` | Permanent Marker and Montserrat, the same fonts the launcher uses |
@@ -187,6 +193,10 @@ weakens the download checks, or breaks the release process.
   is greyed out and the status card says why.
 - **The big tile is never hidden.** When there is nothing to do it goes dark and says "UP TO DATE" (green) or
   "NO UPDATE". Users read a disappearing button as a bug, so don't remove it.
+- **There is no maximise button and the window can't be resized.** The launcher's window has the same two corner
+  buttons. The layout is fixed, so a maximised window would just be a small app in a big black rectangle.
+- **The top-left chip shows GitHub's status, not a user name.** It is the equivalent of the launcher's "Welcome"
+  chip: green dot when `latest.json` was read, blue while checking, grey when it couldn't be reached.
 - **After an install, the zip is cleared** (both a dropped zip and a downloaded one), so the screen shows what is
   installed now rather than a second Install button. The outcome stays on the status card until the user changes
   something.

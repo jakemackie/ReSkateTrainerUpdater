@@ -299,6 +299,13 @@ internal static class OnlineTests
         views.Add(unreadable);
         Check("A zip that couldn't be opened shows why", unreadable is { Pill: "PROBLEM", Headline: "Couldn't read that zip", Subline: "It's damaged." });
 
+        Section("Top-left chip");
+        var online = UpdateAdvisor.DescribeConnection(OnlineStatus.Reachable, "1.2.3");
+        Check("Connected shows a green dot and the app version",
+            online is { Title: "Connected to GitHub", Subtitle: "v1.2.3 · Unofficial helper", Severity: Severity.Good }, online.Subtitle);
+        Check("Offline is calm and grey", UpdateAdvisor.DescribeConnection(OnlineStatus.Unavailable, "1.2.3") is { Title: "Can't reach GitHub", Severity: Severity.Neutral });
+        Check("While checking it says so", UpdateAdvisor.DescribeConnection(OnlineStatus.Checking, "1.2.3") is { Title: "Checking GitHub...", Severity: Severity.Working });
+
         Section("Busy and results");
         var entry = Entry();
         var downloading = UpdateAdvisor.DescribeBusy(BusyStage.Downloading, "ReSkate Trainer 0.9.2 (Tournament)", new DownloadProgress(512 * 1024, 2 * 1024 * 1024));

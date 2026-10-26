@@ -4,8 +4,9 @@ using ReSkateTrainerUpdater.Ui.Controls;
 namespace ReSkateTrainerUpdater.Ui;
 
 /// <summary>
-/// The one window, laid out like the ReSkate launcher: a STATUS card on the left, and on the right the folder, the
-/// optional zip, and one big tile that does the work. The tile either downloads the newest Trainer from GitHub or
+/// The one window, built like the ReSkate launcher: no title bar (just minimise and close buttons in the corner), a
+/// chip and a big wordmark at the top left, a STATUS card on the left, and on the right the folder, the optional zip,
+/// and one big tile that does the work. The tile either downloads the newest Trainer from GitHub or
 /// installs a zip the user dropped. Both routes end in the same InstallAsync.
 /// This class only handles the window. What to show, what to download and how to install lives in Core.
 /// </summary>
@@ -25,8 +26,9 @@ internal sealed class UpdaterForm : Form
         Title = "BACK UP REPLACED FILES",
         Description = "Keeps a copy of your old files, just in case.",
     };
-    private readonly SquareButton _logButton = new() { Text = "ACTIVITY LOG", Width = 170 };
-    private readonly CaptionLabel _caption = new();
+    private readonly SquareButton _logButton = new() { Text = "ACTIVITY LOG", Width = 170, Dark = true };
+    private readonly WindowButtons _windowButtons = new();
+    private readonly string _version = typeof(UpdaterForm).Assembly.GetName().Version?.ToString(3) ?? "";
 
     // The zip, whether the user chose it or it was downloaded from GitHub.
     private string? _zipPath;
@@ -66,15 +68,17 @@ internal sealed class UpdaterForm : Form
         BackColor = Theme.Bg;
         ForeColor = Theme.Text;
         Font = new Font("Segoe UI", 10f);
-        ClientSize = new Size(960, 660);
-        MinimumSize = new Size(880, 620);
+
+        // No title bar, like the launcher. The window has a fixed size, so there is no maximise button either.
+        FormBorderStyle = FormBorderStyle.None;
+        MaximizeBox = false;
+        ClientSize = new Size(960, 700);
         StartPosition = FormStartPosition.CenterScreen;
 
         if (AppIcon.Load() is { } icon) Icon = icon;
 
         BuildLayout();
-
-        _caption.Text = $"v{typeof(UpdaterForm).Assembly.GetName().Version?.ToString(3)}  ·  UNOFFICIAL HELPER, NOT MADE BY THE RESKATE TEAM";
+        MakeDraggable(this);
 
         // Restore what the user had last time.
         _backupRow.SetCheckedImmediate(_settings.BackupReplacedFiles);
@@ -86,6 +90,8 @@ internal sealed class UpdaterForm : Form
         _zipTile.ClearClick += (_, _) => { if (!_installing) ClearZipByUser(); };
         _actionTile.Click += async (_, _) => await OnTileClickAsync();
         _logButton.Click += (_, _) => ToggleLog();
+        _windowButtons.MinimizeClick += (_, _) => WindowState = FormWindowState.Minimized;
+        _windowButtons.CloseClick += (_, _) => Close();
         _backupRow.CheckedChanged += (_, _) =>
         {
             _settings.BackupReplacedFiles = _backupRow.Checked;
@@ -96,10 +102,23 @@ internal sealed class UpdaterForm : Form
         Render();
     }
 
+    // A window with no border still needs these styles so that clicking its taskbar button minimises and restores it.
+    protected override CreateParams CreateParams
+    {
+        get
+        {
+            const int WsMinimizeBox = 0x00020000;
+            const int WsSysMenu = 0x00080000;
+            var cp = base.CreateParams;
+            cp.Style |= WsMinimizeBox | WsSysMenu;
+            return cp;
+        }
+    }
+
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
-        NativeMethods.UseDarkTitleBar(Handle);
+        NativeMethods.ApplyWindowFrame(Handle, Theme.WindowBorder);
     }
 
     protected override void OnShown(EventArgs e)
@@ -134,9 +153,9 @@ internal sealed class UpdaterForm : Form
             Padding = new Padding(34, 24, 34, 26),
         };
         root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 92f));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 132f));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 54f));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 56f));
 
         _header.Dock = DockStyle.Fill;
         _header.Margin = Padding.Empty;
@@ -168,8 +187,8 @@ internal sealed class UpdaterForm : Form
         // Right: the folder, the zip, and the big tile.
         var right = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, BackColor = Theme.Bg, Margin = new Padding(14, 0, 0, 0) };
         right.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-        right.RowStyles.Add(new RowStyle(SizeType.Absolute, 92f));
-        right.RowStyles.Add(new RowStyle(SizeType.Absolute, 106f));
+        right.RowStyles.Add(new RowStyle(SizeType.Absolute, 88f));
+        right.RowStyles.Add(new RowStyle(SizeType.Absolute, 88f));
         right.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
 
         _folderTile.Dock = DockStyle.Fill;
@@ -186,20 +205,23 @@ internal sealed class UpdaterForm : Form
         body.Controls.Add(right, 1, 0);
         root.Controls.Add(body, 0, 1);
 
-        // Footer: the log button and a small caption.
+        // Footer: the log button, like CHANGELOGS in the launcher.
         var footer = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, BackColor = Theme.Bg, Margin = Padding.Empty };
         footer.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 180f));
         footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
         footer.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
         _logButton.Dock = DockStyle.Fill;
-        _logButton.Margin = new Padding(0, 12, 0, 0);
-        _caption.Dock = DockStyle.Fill;
-        _caption.Margin = new Padding(0, 12, 0, 0);
+        _logButton.Margin = new Padding(0, 14, 0, 0);
         footer.Controls.Add(_logButton, 0, 0);
-        footer.Controls.Add(_caption, 1, 0);
         root.Controls.Add(footer, 0, 2);
 
         Controls.Add(root);
+
+        // Minimise and close, flush in the top-right corner and above everything else.
+        _windowButtons.Location = new Point(ClientSize.Width - _windowButtons.Width, 0);
+        _windowButtons.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+        Controls.Add(_windowButtons);
+        _windowButtons.BringToFront();
     }
 
     private void BuildLogCard()
@@ -226,6 +248,14 @@ internal sealed class UpdaterForm : Form
         _logCard.Visible = show;
         _statusCard.Visible = !show;
         _logButton.Text = show ? "BACK TO STATUS" : "ACTIVITY LOG";
+    }
+
+    // Without a title bar, the window is moved by dragging any empty part of it, like the launcher.
+    private void MakeDraggable(Control control)
+    {
+        if (control is Form or TableLayoutPanel or Panel or HeaderBar or StatusCard)
+            control.MouseDown += (_, e) => { if (e.Button == MouseButtons.Left) NativeMethods.DragWindow(Handle); };
+        foreach (Control child in control.Controls) MakeDraggable(child);
     }
 
     // ---------- Drag and drop ----------
@@ -422,13 +452,13 @@ internal sealed class UpdaterForm : Form
         _actionTile.Show(view.Tile);
         _tileAction = view.Tile.Action;
 
-        _folderTile.Set("RESKATE FOLDER", _folder ?? "Click to choose your ReSkate folder", _folder is null ? "CHOOSE" : "CHANGE");
+        _header.SetChip(UpdateAdvisor.DescribeConnection(_online, _version));
+        _folderTile.Set("RESKATE FOLDER", _folder ?? "Click to choose your ReSkate folder");
         _zipTile.Set(
             "TRAINER ZIP",
-            _zipPath is null ? "Drop a .zip here"
+            _zipPath is null ? "Drop a .zip here, or click to browse"
                 : _zipFromOnline ? "Downloaded from GitHub"
                 : Path.GetFileName(_zipPath),
-            "BROWSE",
             clearable: _zipPath is not null && !_installing);
     }
 

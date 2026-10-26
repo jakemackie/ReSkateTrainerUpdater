@@ -292,6 +292,18 @@ public static class UpdateAdvisor
     private static StatusRow LatestRow(ManifestEntry entry, Severity severity) =>
         new($"Latest: {entry.TrainerText} · {ByteSize.Format(entry.SizeBytes)}", severity);
 
+    /// <summary>The chip in the top-left corner: whether GitHub could be reached, and which version of the app this is.</summary>
+    public static ChipView DescribeConnection(OnlineStatus status, string appVersion)
+    {
+        var (title, severity) = status switch
+        {
+            OnlineStatus.Reachable => ("Connected to GitHub", Severity.Good),
+            OnlineStatus.Unavailable => ("Can't reach GitHub", Severity.Neutral),
+            _ => ("Checking GitHub...", Severity.Working),
+        };
+        return new ChipView(title, $"v{appVersion} · Unofficial helper", severity);
+    }
+
     /// <summary>The screen while something is running. <paramref name="what"/> names it, for example "ReSkate Trainer 0.9.2 (Tournament)".</summary>
     public static HomeView DescribeBusy(BusyStage stage, string what, DownloadProgress? progress = null)
     {

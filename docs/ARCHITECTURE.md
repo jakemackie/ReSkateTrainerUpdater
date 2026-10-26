@@ -144,8 +144,14 @@ The online route adds checks in front of the normal install and replaces none of
 
 ## The window
 
-The window follows the ReSkate launcher: a STATUS card on the left, and on the right the folder, an optional zip,
-and one big tile. The look comes from `Theme` (colours sampled from the launcher) and the launcher's own fonts,
+The window follows the ReSkate launcher: no title bar, with minimise and close buttons drawn in the top-right
+corner. Top left are a small chip (the app icon, a GitHub status dot and the version) and the name in tilted marker
+lettering. Then a STATUS card on the left, and on the right the folder, an optional zip, and one big tile.
+
+The window is borderless with a fixed size. `NativeMethods.ApplyWindowFrame` asks Windows 11 for rounded corners and a
+thin border, and gets a shadow by extending the frame one pixel into the window. On Windows 10 the corners stay
+square. Dragging any empty area moves the window by sending the same message a title bar would. The form keeps the
+minimise and system-menu window styles, which is what lets the taskbar button minimise and restore it. The look comes from `Theme` (colours sampled from the launcher) and the launcher's own fonts,
 Montserrat and Permanent Marker, which are embedded in the exe.
 
 `UpdaterForm` keeps a small amount of state: the chosen zip and its package, the chosen folder and what was found
