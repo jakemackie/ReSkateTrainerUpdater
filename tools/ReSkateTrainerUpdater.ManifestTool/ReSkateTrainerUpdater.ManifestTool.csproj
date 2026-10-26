@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Maintainer tool for latest.json. It uses the same Core code as the app, so a manifest it writes is one the app accepts.
+    Windows only: reading the product name from ReSkate.dll needs Windows file properties.
+    See docs/RELEASING.md.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>ReSkateTrainerUpdater.ManifestTool</RootNamespace>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ReSkateTrainerUpdater.Core\ReSkateTrainerUpdater.Core.csproj" />
+  </ItemGroup>
+
+</Project>

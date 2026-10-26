@@ -20,3 +20,8 @@ jobs:
 
       - name: Test
         run: dotnet run --project tests/ReSkateTrainerUpdater.Tests -c Release --no-build
+
+      # Downloads every zip latest.json lists, exactly as the app would, and checks size, SHA-256, version,
+      # edition and build. Fails if latest.json points at a Release asset that doesn't exist or doesn't match.
+      - name: Verify latest.json against the published Trainer zips
+        run: dotnet run --project tools/ReSkateTrainerUpdater.ManifestTool -c Release --no-build -- verify

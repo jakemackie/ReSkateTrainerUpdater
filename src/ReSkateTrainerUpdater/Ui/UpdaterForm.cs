@@ -4,14 +4,16 @@ using ReSkateTrainerUpdater.Ui.Controls;
 namespace ReSkateTrainerUpdater.Ui;
 
 /// <summary>
-/// The one window: drop a Trainer zip, pick the ReSkate folder, press Install.
-/// This class only handles the window itself. What to say and how to install lives in the Core library.
+/// The one window: pick the ReSkate folder, then either click the online Update/Install button in the banner,
+/// or drop a Trainer zip and press Install. Both routes end in the same InstallAsync.
+/// This class only handles the window itself. What to say, what to download and how to install lives in Core.
 /// </summary>
 internal sealed class UpdaterForm : Form
 {
     private readonly UpdaterSettings _settings = UpdaterSettings.Load();
 
     private readonly HeaderBar _header = new();
+    private readonly UpdateBanner _banner = new();
     private readonly DropZone _drop = new();
     private readonly PathCard _pathCard = new();
     private readonly RoundedButton _browseButton = new() { Text = "Change" };
@@ -40,6 +42,13 @@ internal sealed class UpdaterForm : Form
     private bool _checkingFolder;
     private int _folderGeneration;
 
+    // Online updates. One HTTP client for the app's lifetime.
+    private readonly HttpClient _http = TrainerDownloader.CreateClient();
+    private TrainerManifest? _manifest;
+    private OnlineOffer _offer = OnlineOffer.Nothing;
+    private RowStyle? _bannerRow;
+    private const float BannerHeight = 84f;
+
     // The outcome of the last install, shown until the user changes something.
     private Advice? _result;
     private bool _installing;
@@ -52,8 +61,8 @@ internal sealed class UpdaterForm : Form
         BackColor = Theme.Bg;
         ForeColor = Theme.Text;
         Font = Theme.Body;
-        ClientSize = new Size(580, 700);
-        MinimumSize = new Size(520, 680);
+        ClientSize = new Size(580, 780);
+        MinimumSize = new Size(520, 720);
         StartPosition = FormStartPosition.CenterScreen;
 
         if (AppIcon.Load() is { } icon) Icon = icon;
@@ -72,6 +81,7 @@ internal sealed class UpdaterForm : Form
         _pathCard.Click += (_, _) => { if (!_installing) BrowseForFolder(); };
         _browseButton.Click += (_, _) => { if (!_installing) BrowseForFolder(); };
         _installButton.Click += async (_, _) => await InstallAsync();
+        _banner.ButtonClick += async (_, _) => await OnlineInstallAsync();
         _backupRow.CheckedChanged += (_, _) =>
         {
             _settings.BackupReplacedFiles = _backupRow.Checked;
@@ -93,6 +103,9 @@ internal sealed class UpdaterForm : Form
         base.OnShown(e);
         _ = Task.Run(TrainerPackageLoader.CleanUpStaleTempFolders);
 
+        // One quiet request for latest.json. Any failure just leaves the banner hidden.
+        _ = CheckOnlineAsync();
+
         // Show which version is already installed in the folder remembered from last time.
         if (_folder is not null) _ = InspectFolderAsync(_folder);
     }
@@ -100,6 +113,7 @@ internal sealed class UpdaterForm : Form
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
         DisposePackage();
+        _http.Dispose();
         base.OnFormClosed(e);
     }
 
@@ -157,6 +171,8 @@ internal sealed class UpdaterForm : Form
         logCard.Controls.Add(_log);
 
         AddRow(layout, _header, 64);
+        _bannerRow = AddRow(layout, _banner, BannerHeight, new Padding(0, 4, 0, 6));
+        ShowBanner(false);
         AddRow(layout, SectionLabel("UPDATE FILE (.ZIP)"), 28);
         AddRow(layout, _drop, 104);
         AddRow(layout, SectionLabel("YOUR RESKATE FOLDER"), 34);
@@ -171,15 +187,17 @@ internal sealed class UpdaterForm : Form
         Controls.Add(layout);
     }
 
-    private static void AddRow(TableLayoutPanel table, Control control, float height, Padding? margin = null)
+    private static RowStyle AddRow(TableLayoutPanel table, Control control, float height, Padding? margin = null)
     {
-        table.RowStyles.Add(height > 0
+        var style = height > 0
             ? new RowStyle(SizeType.Absolute, height)
-            : new RowStyle(SizeType.Percent, 100f));
+            : new RowStyle(SizeType.Percent, 100f);
+        table.RowStyles.Add(style);
         control.Dock = DockStyle.Fill;
         control.Margin = margin ?? Padding.Empty;
         table.RowCount = table.RowStyles.Count;
         table.Controls.Add(control, 0, table.RowStyles.Count - 1);
+        return style;
     }
 
     private static Label SectionLabel(string text) => new()
@@ -311,7 +329,7 @@ internal sealed class UpdaterForm : Form
         RefreshStatus();
     }
 
-    private void ShowPackageInDropZone(string path)
+    private void ShowPackageInDropZone(string path, string? downloadedFrom = null)
     {
         var fileName = Path.GetFileName(path);
 
@@ -340,7 +358,7 @@ internal sealed class UpdaterForm : Form
             title = $"ReSkate {version.BaseVersion}";
             details.Add("no Trainer found in this zip");
         }
-        details.Add(FormatSize(_package.ZipSize));
+        details.Add(downloadedFrom ?? ByteSize.Format(_package.ZipSize));
 
         _drop.SetState(DropState.Ready, title, string.Join(" · ", details));
     }
@@ -371,7 +389,7 @@ internal sealed class UpdaterForm : Form
         _checkingFolder = true;
         _folderInfo = null;
         _pathCard.SetInstalled("Checking this folder...", Theme.Muted);
-        RefreshStatus();
+        RefreshOffer();
 
         InstallFolderInfo? info = null;
         string? problem = null;
@@ -399,13 +417,13 @@ internal sealed class UpdaterForm : Form
             var (text, severity) = UpdateAdvisor.DescribeFolder(info);
             _pathCard.SetInstalled(text, Theme.ForSeverity(severity));
         }
-        RefreshStatus();
+        RefreshOffer();
     }
 
     // ---------- Status ----------
 
     private UpdateContext CurrentContext() =>
-        new(_checkingZip, _zipPath, _zipProblem, _package, _folder, _checkingFolder, _folderInfo);
+        new(_checkingZip, _zipPath, _zipProblem, _package, _folder, _checkingFolder, _folderInfo, _offer);
 
     private void RefreshStatus()
     {
@@ -419,28 +437,139 @@ internal sealed class UpdaterForm : Form
         _status.ForeColor = Theme.ForSeverity(shown.Severity);
     }
 
-    private static string FormatSize(long bytes)
-    {
-        string[] units = { "B", "KB", "MB", "GB" };
-        double size = bytes;
-        int unit = 0;
-        while (size >= 1024 && unit < units.Length - 1)
-        {
-            size /= 1024;
-            unit++;
-        }
-        return unit == 0 ? $"{bytes} B" : $"{size:0.#} {units[unit]}";
-    }
-
     private void Log(string message) => _log.AppendText(message + "\r\n");
 
     private bool Confirm(string message) =>
         MessageBox.Show(this, message, AppInfo.Name, MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
             MessageBoxDefaultButton.Button2) == DialogResult.Yes;
 
+    // ---------- Online updates ----------
+
+    private async Task CheckOnlineAsync()
+    {
+        var result = await TrainerDownloader.FetchManifestAsync(_http);
+        if (IsDisposed) return;
+
+        _manifest = result.Manifest;
+        Log(UpdateAdvisor.DescribeManifestCheck(result));
+        if (result.Manifest is not null)
+        {
+            foreach (var problem in result.Problems) Log("  " + problem);
+        }
+        RefreshOffer();
+    }
+
+    // Works out what the banner offers for the current folder, then refreshes the status line.
+    private void RefreshOffer()
+    {
+        if (!_installing)
+        {
+            _offer = UpdateAdvisor.DescribeOnlineOffer(_manifest, _checkingFolder ? null : _folderInfo);
+            if (_offer.CanDownload) _banner.SetOffer(_offer.Title, _offer.Detail, _offer.ButtonText);
+            ShowBanner(_offer.CanDownload);
+        }
+        RefreshStatus();
+    }
+
+    private void ShowBanner(bool show)
+    {
+        if (_bannerRow is null) return;
+        _banner.Visible = show;
+        _bannerRow.Height = show ? BannerHeight : 0f;
+    }
+
+    /// <summary>
+    /// Downloads the offered zip, checks it against latest.json, then hands it to the normal install, exactly as if
+    /// the user had dropped it. Nothing in the ReSkate folder is touched until every check has passed.
+    /// </summary>
+    private async Task OnlineInstallAsync()
+    {
+        if (_installing || _offer is not { CanDownload: true, Entry: { } entry } || _folder is null) return;
+
+        string buttonText = _offer.ButtonText;
+        _installing = true;
+        _result = null;
+        _installButton.Enabled = false;
+        _banner.ButtonEnabled = false;
+        _banner.SetButtonText("Downloading...");
+        _progress.Active = true;
+        _log.Clear();
+        Log($"Downloading ReSkate Trainer {entry.TrainerText} from {entry.Url}");
+        ShowStatus(UpdateAdvisor.DescribeDownloadProgress(entry, new DownloadProgress(0, entry.SizeBytes)));
+
+        // Progress<T> created here posts its reports back to this (UI) thread.
+        var progress = new Progress<DownloadProgress>(p =>
+        {
+            if (_installing) ShowStatus(UpdateAdvisor.DescribeDownloadProgress(entry, p));
+        });
+
+        TrainerPackage? package = null;
+        Advice? failure = null;
+        var download = await TrainerDownloader.DownloadAsync(_http, entry, progress);
+
+        if (!download.Succeeded)
+        {
+            Log("Download failed: " + download.Detail);
+            failure = UpdateAdvisor.DescribeDownloadFailure(download.Failure);
+        }
+        else
+        {
+            Log(download.Detail ?? "Download verified.");
+            try
+            {
+                package = await Task.Run(() => TrainerPackageLoader.Load(download.ZipPath!));
+                if (TrainerDownloader.CheckPackageMatches(entry, package) is { } mismatch)
+                {
+                    Log("Refused: " + mismatch);
+                    failure = UpdateAdvisor.DescribePackageMismatch(mismatch);
+                    package.Dispose();
+                    package = null;
+                }
+            }
+            catch (Exception ex)
+            {
+                Log("Refused: " + ex.Message);
+                failure = UpdateAdvisor.DescribePackageMismatch(ex.Message);
+                package?.Dispose();
+                package = null;
+            }
+            finally
+            {
+                // The package is unpacked to its own temp folder, so the downloaded zip is no longer needed.
+                TrainerDownloader.DeleteDownloadFolder(download.ZipPath!);
+            }
+        }
+
+        _installing = false;
+        _progress.Active = false;
+        _banner.SetButtonText(buttonText);
+        _banner.ButtonEnabled = true;
+
+        if (package is null)
+        {
+            _result = failure ?? UpdateAdvisor.DescribeDownloadFailure(DownloadFailure.Network);
+            RefreshStatus();
+            return;
+        }
+
+        // From here on it is the ordinary install of a checked zip, with the same confirmations, backup and rollback.
+        _zipGeneration++;
+        DisposePackage();
+        _checkingZip = false;
+        _zipPath = download.ZipPath;
+        _zipProblem = null;
+        _package = package;
+        ShowPackageInDropZone(download.ZipPath!, "downloaded from GitHub");
+        RefreshStatus();
+
+        await InstallAsync(clearLog: false);
+    }
+
+
     // ---------- Installing ----------
 
-    private async Task InstallAsync()
+    /// <summary>Installs the current package. Both the Install button and the online banner end up here.</summary>
+    private async Task InstallAsync(bool clearLog = true)
     {
         if (_installing) return;
         if (!UpdateAdvisor.Evaluate(CurrentContext()).CanInstall) return;
@@ -471,8 +600,9 @@ internal sealed class UpdaterForm : Form
         _result = null;
         _installButton.Enabled = false;
         _installButton.Text = "Installing...";
+        _banner.ButtonEnabled = false;
         _progress.Active = true;
-        _log.Clear();
+        if (clearLog) _log.Clear();
         ShowStatus(new Advice("Installing... please don't close the app.", Severity.Working));
         Log($"Installing {incoming.DisplayName} into {folder}");
         foreach (var note in package.Notes) Log(note);
@@ -498,6 +628,7 @@ internal sealed class UpdaterForm : Form
             _installing = false;
             _progress.Active = false;
             _installButton.Text = InstallText;
+            _banner.ButtonEnabled = true;
         }
 
         RefreshStatus();

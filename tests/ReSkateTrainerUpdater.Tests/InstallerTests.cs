@@ -27,7 +27,7 @@ internal static class InstallerTests
         var fresh = TrainerInstaller.Install(release, target, backup: true);
         Check("A fresh install adds every file", fresh is { Outcome: InstallOutcome.Installed, Added: 3, Replaced: 0 }, $"{fresh.Outcome} +{fresh.Added} ~{fresh.Replaced}");
         Check("The installed file matches the package", Hashing.Of(Path.Combine(target, "ReSkate.dll")) == Hashing.Of(releaseDll));
-        Check("No half-written files are left behind", !Directory.EnumerateFiles(target, "*.updating", SearchOption.AllDirectories).Any());
+        Check("Invariant: no half-written files are left behind", !Directory.EnumerateFiles(target, "*.updating", SearchOption.AllDirectories).Any());
         Check("The folder's version is now readable",
             InstallFolderInspector.Inspect(target).Installed is { TrainerVersion: "0.9.2", Edition: "Tournament" });
 
@@ -63,19 +63,19 @@ internal static class InstallerTests
         {
             locked = TrainerInstaller.Install(release, target, backup: true);
         }
-        Check("A file in use blocks the install", locked is { Outcome: InstallOutcome.Blocked, BlockedBy: BlockReason.FilesInUse }, locked.Outcome.ToString());
+        Check("Invariant: a file in use blocks the install", locked is { Outcome: InstallOutcome.Blocked, BlockedBy: BlockReason.FilesInUse }, locked.Outcome.ToString());
         Check("The blocked file is named", locked.Problems.Any(p => p.Contains("ReSkate.dll")), string.Join("; ", locked.Problems));
-        Check("Nothing else was touched", Hashing.Of(launcher) == launcherBefore && File.ReadAllBytes(dll).SequenceEqual(edited));
+        Check("Invariant: nothing is touched if any file is locked", Hashing.Of(launcher) == launcherBefore && File.ReadAllBytes(dll).SequenceEqual(edited));
 
         var broken = workspace.NewFolder("broken");
         File.WriteAllBytes(Path.Combine(broken, "ReSkate.dll"), edited);
         // A folder where the launcher should go: copying the launcher fails part-way through.
         Directory.CreateDirectory(Path.Combine(broken, "ReSkateLauncher.exe"));
         var rolledBack = TrainerInstaller.Install(release, broken, backup: true);
-        Check("A failure part-way is rolled back", rolledBack.Outcome == InstallOutcome.RolledBack, rolledBack.Outcome.ToString());
-        Check("The original file is put back", File.ReadAllBytes(Path.Combine(broken, "ReSkate.dll")).SequenceEqual(edited));
-        Check("Files added before the failure are removed", !File.Exists(Path.Combine(broken, "README.txt")));
-        Check("No half-written files are left after a rollback", !Directory.EnumerateFiles(broken, "*.updating", SearchOption.AllDirectories).Any());
+        Check("Invariant: a failure part-way is rolled back", rolledBack.Outcome == InstallOutcome.RolledBack, rolledBack.Outcome.ToString());
+        Check("Invariant: the original file is put back after a failure", File.ReadAllBytes(Path.Combine(broken, "ReSkate.dll")).SequenceEqual(edited));
+        Check("Invariant: files added before a failure are removed", !File.Exists(Path.Combine(broken, "README.txt")));
+        Check("Invariant: no half-written files are left after a rollback", !Directory.EnumerateFiles(broken, "*.updating", SearchOption.AllDirectories).Any());
         Check("The unused backup folder is cleaned up", Directory.GetDirectories(broken, "_ReSkateTrainerUpdater_backup_*").Length == 0);
     }
 }

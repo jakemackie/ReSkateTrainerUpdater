@@ -9,7 +9,7 @@ public static class UpdateAdvisor
     public static Advice Evaluate(UpdateContext context)
     {
         if (context.CheckingZip) return new Advice("Checking the zip...", Severity.Working);
-        if (context.ZipPath is null) return new Advice("Drop the ReSkate Trainer zip to get started.", Severity.Neutral);
+        if (context.ZipPath is null) return DescribeNoZip(context.Offer);
         if (context.Package is null) return new Advice(context.ZipProblem ?? "Couldn't read that zip.", Severity.Error);
         if (!context.Package.IsValid) return new Advice(context.Package.Errors[0], Severity.Error);
         if (context.Package.Version is not { } incoming) return new Advice("Couldn't read the version in that zip.", Severity.Error);
@@ -100,6 +100,121 @@ public static class UpdateAdvisor
         if (folder.IsEmpty) return ("Empty folder: this will be a fresh install.", Severity.Neutral);
         return ("No ReSkate found in this folder yet.", Severity.Warning);
     }
+
+    // The status line before any zip is chosen. The online banner, when shown, is the quicker route.
+    private static Advice DescribeNoZip(OnlineOffer? offer) => offer?.Kind switch
+    {
+        OfferKind.Update or OfferKind.FreshInstall =>
+            new Advice($"Click {offer.ButtonText} above to download it from GitHub, or drop a zip instead.", Severity.Neutral),
+        OfferKind.UpToDate =>
+            new Advice("You have the newest published version. Drop a zip only if you want a different one.", Severity.Neutral),
+        _ => new Advice("Drop the ReSkate Trainer zip to get started.", Severity.Neutral),
+    };
+
+    // ---------- Online updates ----------
+
+    /// <summary>
+    /// What the online banner offers for this folder. Only offers what latest.json lists:
+    /// an empty or new folder gets the fresh-install edition (Tournament), and an installed Trainer is only
+    /// offered a newer version of its own edition. Plain ReSkate, an unreadable ReSkate.dll, and editions the
+    /// manifest doesn't list get nothing, and the drop zone works as before.
+    /// </summary>
+    public static OnlineOffer DescribeOnlineOffer(TrainerManifest? manifest, InstallFolderInfo? folder)
+    {
+        if (manifest is null || folder is null) return OnlineOffer.Nothing;
+        if (!folder.Exists || folder.IsSteamSkateFolder) return OnlineOffer.Nothing;
+
+        if (!folder.HasRuntime)
+        {
+            if (manifest.Find(OnlineSource.FreshInstallEdition) is not { } fresh) return OnlineOffer.Nothing;
+            return new OnlineOffer(
+                OfferKind.FreshInstall,
+                fresh,
+                $"ReSkate Trainer {fresh.TrainerText} is available",
+                DetailFor(fresh),
+                $"Install {fresh.EditionName} Edition");
+        }
+
+        // ReSkate.dll is there but couldn't be read, or it is plain ReSkate: don't guess.
+        if (folder.Installed is not { HasTrainer: true } installed) return OnlineOffer.Nothing;
+
+        if (manifest.Find(OnlineSource.EditionKey(installed.Edition)) is not { } latest) return OnlineOffer.Nothing;
+
+        if (VersionCompare.Compare(installed.TrainerVersion, latest.Version) < 0)
+        {
+            return new OnlineOffer(
+                OfferKind.Update,
+                latest,
+                $"Update available: {installed.TrainerVersion} → {latest.TrainerText}",
+                DetailFor(latest),
+                "Update");
+        }
+
+        return new OnlineOffer(
+            OfferKind.UpToDate,
+            latest,
+            $"You have the newest {latest.EditionName} version ({installed.TrainerVersion}).",
+            "",
+            "");
+    }
+
+    private static string DetailFor(ManifestEntry entry)
+    {
+        var parts = new List<string>();
+        if (entry.ReSkateVersion is not null) parts.Add("built on ReSkate " + entry.ReSkateVersion);
+        parts.Add(ByteSize.Format(entry.SizeBytes));
+        parts.Add("checked before installing");
+        var text = string.Join(" · ", parts);
+        return char.ToUpperInvariant(text[0]) + text[1..];
+    }
+
+    /// <summary>The activity-log line after the start-up check of latest.json.</summary>
+    public static string DescribeManifestCheck(ManifestReadResult result)
+    {
+        if (result.Manifest is null)
+        {
+            var why = result.Problems.Count > 0 ? result.Problems[0] : "unknown problem";
+            return $"Online check skipped ({why}). Dropping a zip still works.";
+        }
+
+        if (result.Manifest.Editions.Count == 0) return "Online check: no Trainer has been published online yet.";
+
+        var latest = string.Join(", ", result.Manifest.Editions.Values.Select(e => $"{e.EditionName} {e.Version}"));
+        return $"Online check: newest published Trainer is {latest}.";
+    }
+
+    /// <summary>The status line while a zip downloads.</summary>
+    public static Advice DescribeDownloadProgress(ManifestEntry entry, DownloadProgress progress) =>
+        new($"Downloading ReSkate Trainer {entry.TrainerText}... {ByteSize.Format(progress.Received)} of {ByteSize.Format(progress.Total)}",
+            Severity.Working);
+
+    /// <summary>The message when a download fails. Every case says nothing was changed, because nothing was.</summary>
+    public static Advice DescribeDownloadFailure(DownloadFailure failure) => failure switch
+    {
+        DownloadFailure.UntrustedUrl => new Advice(
+            "The update link doesn't point to this app's GitHub releases, so it was refused. Nothing was changed.",
+            Severity.Error),
+        DownloadFailure.Network => new Advice(
+            "Couldn't download the update. Check your internet connection and try again. Nothing was changed.",
+            Severity.Warning),
+        DownloadFailure.HttpError => new Advice(
+            "GitHub couldn't provide the update file right now. Try again later, or drop a zip instead. Nothing was changed.",
+            Severity.Warning),
+        DownloadFailure.SizeMismatch or DownloadFailure.HashMismatch => new Advice(
+            "The downloaded file doesn't match the published one, so it was deleted and not installed. Nothing was changed.",
+            Severity.Error),
+        DownloadFailure.TimedOut => new Advice(
+            "The download took too long and was stopped. Try again, or drop a zip instead. Nothing was changed.",
+            Severity.Warning),
+        _ => new Advice(
+            "Couldn't save the download to your temp folder. Nothing was changed.",
+            Severity.Error),
+    };
+
+    /// <summary>The message when the downloaded zip isn't what latest.json promised.</summary>
+    public static Advice DescribePackageMismatch(string reason) =>
+        new($"The downloaded update isn't what was published, so it was not installed. Nothing was changed. {reason}",
+            Severity.Error);
 
     /// <summary>The message shown once an install has finished (or failed).</summary>
     public static Advice DescribeResult(InstallResult result, ReSkateVersion incoming)

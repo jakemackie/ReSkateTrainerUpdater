@@ -34,8 +34,10 @@ jobs:
         shell: pwsh
         run: ./scripts/build-release.ps1
 
+      # --latest keeps the app as the repository's "Latest release". Trainer zips are published as separate
+      # releases (tags like trainer-tournament-0.9.2) that must NOT be marked latest. See docs/RELEASING.md.
       - name: Publish the release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${{ github.ref_name }}" (Get-ChildItem release/*.zip) --title "ReSkate Trainer Updater ${{ github.ref_name }}" --generate-notes
+        run: gh release create "${{ github.ref_name }}" (Get-ChildItem release/*.zip) --title "ReSkate Trainer Updater ${{ github.ref_name }}" --generate-notes --latest

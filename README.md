@@ -2,21 +2,28 @@
 
 [![CI](../../actions/workflows/ci.yml/badge.svg)](../../actions/workflows/ci.yml)
 
-A small Windows app that installs the newest [ReSkate Trainer](https://github.com/andrewnakas/reskate-trainer) into your ReSkate folder. Drop the zip you downloaded, pick your ReSkate folder, click **Install update**.
+A small Windows app that installs the newest [ReSkate Trainer](https://github.com/andrewnakas/reskate-trainer) into your ReSkate folder. Pick your ReSkate folder and click **Update**. If you already have a Trainer zip, you can drop it on the window instead.
 
 This is an unofficial helper. It isn't made by, or affiliated with, the ReSkate or ReSkate Trainer authors.
 
 ## Using it
 
-1. Download `ReSkateTrainerUpdater-<version>.zip` from the [Releases](../../releases) page and unzip it. The exe needs no installation.
+1. Download `ReSkateTrainerUpdater-<version>.zip` from the [latest release](../../releases/latest) and unzip it. The exe needs no installation.
 2. Close the game and the ReSkate launcher.
-3. Drop the ReSkate Trainer zip onto the window (or click it to browse). A zip inside a zip, or one wrapped in a folder, is fine.
-4. Choose your ReSkate folder, the one with `ReSkateLauncher.exe`. The app remembers it for next time.
-5. Click **Install update**, then start `ReSkateLauncher.exe` as usual.
+3. Choose your ReSkate folder, the one with `ReSkateLauncher.exe`. The app remembers it for next time.
+4. If a newer Trainer is published, a banner says **Update available**. Click **Update**. For an empty folder, the banner offers **Install Tournament Edition** instead.
+5. Start `ReSkateLauncher.exe` as usual.
+
+**Offline, or a different version:** drop a ReSkate Trainer zip onto the window (or click it to browse), then click **Install update**. A zip inside a zip, or one wrapped in a folder, is fine.
 
 Windows may show an "Unknown publisher" SmartScreen warning because the exe isn't code-signed. Choose **More info**, then **Run anyway**.
 
 ## What it checks
+
+**Downloads**
+- It only downloads Trainer zips from this repository's GitHub Releases.
+- The size and SHA-256 of every download must match the published [`latest.json`](latest.json) exactly, or the file is deleted and nothing is installed.
+- The version, edition and build inside the downloaded DLL must match what was published.
 
 **The zip**
 - It contains `ReSkate.dll` and `ReSkateLauncher.exe`, both real 64-bit Windows programs that identify as ReSkate.
@@ -31,6 +38,24 @@ Windows may show an "Unknown publisher" SmartScreen warning because the exe isn'
 - Before changing anything it checks that no file is in use or protected, so an open game leaves your files untouched.
 - Every replaced file is copied to `_ReSkateTrainerUpdater_backup_<date>` inside your folder. You can switch this off.
 - If something fails part-way, your original files are put back, so you never end up half-updated.
+
+## Privacy
+
+The app contacts GitHub only, and only at two moments:
+
+- **On start-up** it downloads [`latest.json`](latest.json) from this repository to see whether a newer Trainer is published.
+- **When you click Update or Install** it downloads that one Trainer zip from this repository's Releases.
+
+It sends nothing about you, your PC or your game: no IDs, folder paths, versions or usage data. GitHub sees your IP address, as with any visit to github.com. It never installs anything without your click. If you're offline, it skips the check silently and the drop zone works as before.
+
+## Credits and licences
+
+The ReSkate Trainer is GPL-3.0 software by its authors. The Trainer zips published here are redistributed unmodified, with their `LICENSE.txt` and `README.txt` included. Source code:
+
+- ReSkate: https://github.com/Dingo-Shenanigans/ReSkate
+- ReSkate Trainer: https://github.com/andrewnakas/reskate-trainer
+- Dark Pop: https://github.com/Sivaes/darkpop
+- Grab Fix: https://github.com/Sivaes/grabbugs
 
 ## Building from source
 
@@ -55,18 +80,21 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build-release.ps1
 
 The exe is self-contained, so players don't need to install .NET. The result is in `release/`.
 
-To publish a version on GitHub, set `<Version>` in `Directory.Build.props`, commit, then push a matching tag such as `v1.0.0`. The Release workflow builds the exe and attaches it to a GitHub release.
+**Maintainers:** releasing the app and publishing a new Trainer zip are described step by step in [docs/RELEASING.md](docs/RELEASING.md). AI coding agents should read [CLAUDE.md](CLAUDE.md) first.
 
 ## Project layout
 
 | Path | What it holds |
 |---|---|
-| `src/ReSkateTrainerUpdater.Core` | All the logic, with no UI: reading versions, checking zips and folders, installing, the status messages |
+| `src/ReSkateTrainerUpdater.Core` | All the logic, with no UI: reading versions, checking zips and folders, online updates, installing, the status messages |
 | `src/ReSkateTrainerUpdater` | The WinForms app: the window and its custom dark controls |
-| `tests/ReSkateTrainerUpdater.Tests` | Tests for the Core library, using small generated stand-ins for the ReSkate files |
+| `tests/ReSkateTrainerUpdater.Tests` | Tests for the Core library, using small generated stand-ins for the ReSkate files and a fake GitHub |
+| `tools/ReSkateTrainerUpdater.ManifestTool` | The maintainer's tool that writes and verifies `latest.json` |
+| `latest.json` | The newest published Trainer for each edition, read by the app on start-up |
+| `docs` | Architecture, the online update format, and the release steps |
 | `scripts` | `build-release.ps1` |
 
 ## Notes
 
-- If a future Trainer build stores its version differently, the app still installs it but says it couldn't read the version.
+- If a future Trainer build stores its version differently, the app still installs it from a dropped zip but says it couldn't read the version.
 - Settings (last folder, backup switch) are stored in `%AppData%\ReSkateTrainerUpdater\settings.json`.
