@@ -75,7 +75,10 @@ internal sealed class UpdaterForm : Form
         // No title bar, like the launcher. The window has a fixed size, so there is no maximise button either.
         FormBorderStyle = FormBorderStyle.None;
         MaximizeBox = false;
-        ClientSize = new Size(960, 700);
+
+        // Roomy by default, but never bigger than the screen's usable area (a small laptop screen still fits it).
+        var area = Screen.FromPoint(Cursor.Position).WorkingArea;
+        ClientSize = new Size(Math.Min(1120, area.Width - 60), Math.Min(800, area.Height - 60));
         StartPosition = FormStartPosition.CenterScreen;
 
         if (AppIcon.Load() is { } icon) Icon = icon;
@@ -160,12 +163,12 @@ internal sealed class UpdaterForm : Form
             ColumnCount = 1,
             RowCount = 3,
             BackColor = Theme.Bg,
-            Padding = new Padding(34, 24, 34, 26),
+            Padding = new Padding(46, 28, 46, 32),
         };
         root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 132f));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 140f));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 56f));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 62f));
 
         _header.Dock = DockStyle.Fill;
         _header.Margin = Padding.Empty;
@@ -178,10 +181,10 @@ internal sealed class UpdaterForm : Form
         body.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
 
         // Left: the status card (or the log in its place), and the backup option under it.
-        var left = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, BackColor = Theme.Bg, Margin = new Padding(0, 0, 14, 0) };
+        var left = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, BackColor = Theme.Bg, Margin = new Padding(0, 0, 20, 0) };
         left.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
         left.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
-        left.RowStyles.Add(new RowStyle(SizeType.Absolute, 84f));
+        left.RowStyles.Add(new RowStyle(SizeType.Absolute, 92f));
 
         var stack = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Bg, Margin = Padding.Empty };
         _statusCard.Dock = DockStyle.Fill;
@@ -191,22 +194,22 @@ internal sealed class UpdaterForm : Form
         left.Controls.Add(stack, 0, 0);
 
         _backupRow.Dock = DockStyle.Fill;
-        _backupRow.Margin = new Padding(0, 14, 0, 0);
+        _backupRow.Margin = new Padding(0, 20, 0, 0);
         left.Controls.Add(_backupRow, 0, 1);
 
         // Right: the folder, the zip, and the big tile.
-        var right = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, BackColor = Theme.Bg, Margin = new Padding(14, 0, 0, 0) };
+        var right = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, BackColor = Theme.Bg, Margin = new Padding(20, 0, 0, 0) };
         right.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-        right.RowStyles.Add(new RowStyle(SizeType.Absolute, 88f));
-        right.RowStyles.Add(new RowStyle(SizeType.Absolute, 88f));
+        right.RowStyles.Add(new RowStyle(SizeType.Absolute, 98f));
+        right.RowStyles.Add(new RowStyle(SizeType.Absolute, 98f));
         right.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
 
         _folderTile.Dock = DockStyle.Fill;
         _folderTile.Margin = Padding.Empty;
         _zipTile.Dock = DockStyle.Fill;
-        _zipTile.Margin = new Padding(0, 14, 0, 0);
+        _zipTile.Margin = new Padding(0, 20, 0, 0);
         _actionTile.Dock = DockStyle.Fill;
-        _actionTile.Margin = new Padding(0, 14, 0, 0);
+        _actionTile.Margin = new Padding(0, 20, 0, 0);
         right.Controls.Add(_folderTile, 0, 0);
         right.Controls.Add(_zipTile, 0, 1);
         right.Controls.Add(_actionTile, 0, 2);
@@ -221,7 +224,7 @@ internal sealed class UpdaterForm : Form
         footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
         footer.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
         _logButton.Dock = DockStyle.Fill;
-        _logButton.Margin = new Padding(0, 14, 0, 0);
+        _logButton.Margin = new Padding(0, 20, 0, 0);
         footer.Controls.Add(_logButton, 0, 0);
         root.Controls.Add(footer, 0, 2);
 
