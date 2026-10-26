@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- All the logic that has nothing to do with the window: reading versions, checking zips and folders, installing. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>ReSkateTrainerUpdater.Core</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ReSkateTrainerUpdater.Tests" />
+  </ItemGroup>
+
+</Project>

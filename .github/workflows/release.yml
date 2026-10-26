@@ -1,0 +1,41 @@
+name: Release
+
+# Push a tag such as v1.0.0 to build the exe and publish it as a GitHub release.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Check the tag matches the version in Directory.Build.props
+        shell: pwsh
+        run: |
+          [xml]$props = Get-Content Directory.Build.props
+          $version = @($props.Project.PropertyGroup | ForEach-Object { $_.Version } | Where-Object { $_ })[0]
+          if ("v$version" -ne "${{ github.ref_name }}") {
+            throw "Tag ${{ github.ref_name }} does not match version $version in Directory.Build.props"
+          }
+
+      - name: Test
+        run: dotnet run --project tests/ReSkateTrainerUpdater.Tests -c Release
+
+      - name: Build the release zip
+        shell: pwsh
+        run: ./scripts/build-release.ps1
+
+      - name: Publish the release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" (Get-ChildItem release/*.zip) --title "ReSkate Trainer Updater ${{ github.ref_name }}" --generate-notes

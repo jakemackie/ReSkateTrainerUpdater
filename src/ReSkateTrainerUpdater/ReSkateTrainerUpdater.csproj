@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <RootNamespace>ReSkateTrainerUpdater</RootNamespace>
+
+    <!-- The exe people download. -->
+    <AssemblyName>ReSkateTrainerUpdater</AssemblyName>
+    <Product>ReSkate Trainer Updater</Product>
+    <Description>Installs the newest ReSkate Trainer into your ReSkate folder.</Description>
+    <ApplicationIcon>Assets\ReSkateTrainerUpdater.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Also embedded, so the window and header can show the same icon. LogicalName must match AppIcon. -->
+    <EmbeddedResource Include="Assets\ReSkateTrainerUpdater.ico" LogicalName="app.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ReSkateTrainerUpdater.Core\ReSkateTrainerUpdater.Core.csproj" />
+  </ItemGroup>
+
+</Project>
