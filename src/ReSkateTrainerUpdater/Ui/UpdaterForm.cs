@@ -1,3 +1,5 @@
+using System.ComponentModel;
+using System.Diagnostics;
 using ReSkateTrainerUpdater.Core;
 using ReSkateTrainerUpdater.Ui.Controls;
 
@@ -49,6 +51,7 @@ internal sealed class UpdaterForm : Form
     private TrainerManifest? _manifest;
     private OnlineStatus _online = OnlineStatus.Checking;
     private OnlineOffer _offer = OnlineOffer.Nothing;
+    private AppOffer? _appOffer;
 
     // What the big tile does right now, kept from the last time the screen was drawn.
     private TileAction _tileAction = TileAction.None;
@@ -60,7 +63,7 @@ internal sealed class UpdaterForm : Form
     private HomeView? _busyView;
     private bool _installing;
 
-    public UpdaterForm()
+    public UpdaterForm(bool justUpdated = false)
     {
         Text = AppInfo.Name;
         AutoScaleMode = AutoScaleMode.Dpi;
@@ -98,6 +101,9 @@ internal sealed class UpdaterForm : Form
             _settings.Save();
         };
 
+        // The previous version started this one after swapping itself out, and says so here.
+        if (justUpdated) _result = UpdateAdvisor.DescribeAppUpdated(_version);
+
         EnableDropOn(this);
         Render();
     }
@@ -125,6 +131,10 @@ internal sealed class UpdaterForm : Form
     {
         base.OnShown(e);
         _ = Task.Run(TrainerPackageLoader.CleanUpStaleTempFolders);
+
+        // After an app update, the previous version's exe is left beside this one. Remove it.
+        if (Environment.ProcessPath is { } exePath && AppUpdater.CanUpdateInPlace(exePath))
+            _ = Task.Run(() => AppUpdater.CleanUpLeftovers(exePath));
 
         // One quiet request for latest.json. Any failure just leaves the screen as it would be offline.
         _ = CheckOnlineAsync();
@@ -440,7 +450,7 @@ internal sealed class UpdaterForm : Form
     // ---------- Drawing the screen ----------
 
     private UpdateContext CurrentContext() =>
-        new(_checkingZip, _zipPath, _zipProblem, _package, _folder, _checkingFolder, _folderInfo, _offer, _online);
+        new(_checkingZip, _zipPath, _zipProblem, _package, _folder, _checkingFolder, _folderInfo, _offer, _online, _appOffer);
 
     // Draws everything from the current state. The decisions are made in UpdateAdvisor.
     private void Render()
@@ -484,6 +494,8 @@ internal sealed class UpdaterForm : Form
         }
 
         _offer = UpdateAdvisor.DescribeOnlineOffer(_manifest, _folderInfo);
+        _appOffer = UpdateAdvisor.DescribeAppOffer(_manifest, _version, AppUpdater.CanUpdateInPlace(Environment.ProcessPath));
+        if (_appOffer is { } newer) Log($"A newer version of the updater is available: {newer.CurrentVersion} to {newer.Entry.Version}.");
         Render();
     }
 
@@ -498,7 +510,108 @@ internal sealed class UpdaterForm : Form
             case TileAction.InstallZip:
                 await InstallAsync();
                 break;
+            case TileAction.UpdateApp:
+                await UpdateAppAsync();
+                break;
         }
+    }
+
+    /// <summary>
+    /// Downloads the newer version of this app, checks it against latest.json, swaps it in for the running exe and starts it.
+    /// The current exe is only touched at the very last step, and is put back if that step fails.
+    /// </summary>
+    private async Task UpdateAppAsync()
+    {
+        if (_installing || _appOffer is not { } offer || Environment.ProcessPath is not { } exePath || !AppUpdater.CanUpdateInPlace(exePath)) return;
+
+        var app = offer.Entry;
+        string what = "ReSkate Trainer Updater " + app.Version;
+        _installing = true;
+        _result = null;
+        _log.Clear();
+        Log($"Downloading {what} from {app.Url}");
+        _busyView = UpdateAdvisor.DescribeBusy(BusyStage.Downloading, what, new DownloadProgress(0, app.SizeBytes));
+        Render();
+
+        // Progress<T> created here posts its reports back to this (UI) thread.
+        var progress = new Progress<DownloadProgress>(p =>
+        {
+            if (!_installing || _busyView is not { Pill: "DOWNLOADING" }) return;
+            _busyView = UpdateAdvisor.DescribeBusy(BusyStage.Downloading, what, p);
+            Render();
+        });
+
+        Advice? failure = null;
+        string? staged = null;
+        var download = await TrainerDownloader.DownloadAsync(_http, app, progress);
+
+        if (!download.Succeeded)
+        {
+            Log("Download failed: " + download.Detail);
+            failure = UpdateAdvisor.DescribeDownloadFailure(download.Failure);
+        }
+        else
+        {
+            Log(download.Detail ?? "Download verified.");
+            _busyView = UpdateAdvisor.DescribeBusy(BusyStage.Unpacking, what);
+            Render();
+            try
+            {
+                var result = await Task.Run(() => AppUpdater.Stage(download.ZipPath!, exePath, app.Version));
+                if (result.Succeeded)
+                {
+                    staged = result.ExePath;
+                }
+                else
+                {
+                    Log("Refused: " + result.Detail);
+                    failure = UpdateAdvisor.DescribeAppUpdateFailure(result.Failure);
+                }
+            }
+            finally
+            {
+                TrainerDownloader.DeleteDownloadFolder(download.ZipPath!);
+            }
+        }
+
+        if (staged is not null)
+        {
+            _busyView = UpdateAdvisor.DescribeBusy(BusyStage.Restarting, what);
+            Render();
+
+            var (swapFailure, detail) = AppUpdater.Swap(exePath, staged);
+            if (swapFailure == AppUpdateFailure.None)
+            {
+                Log("The new version is in place. Restarting.");
+                try
+                {
+                    Process.Start(new ProcessStartInfo(exePath, "--updated")
+                    {
+                        UseShellExecute = false,
+                        WorkingDirectory = Path.GetDirectoryName(exePath) ?? "",
+                    });
+                    Close(); // this copy exits; the new one deletes the old exe's leftover
+                    return;
+                }
+                catch (Exception ex) when (ex is Win32Exception or InvalidOperationException)
+                {
+                    // The swap worked, so the update is done. It just has to be opened by hand.
+                    Log("Couldn't start the new version: " + ex.Message);
+                    failure = UpdateAdvisor.DescribeAppRestartFailed(app.Version);
+                }
+            }
+            else
+            {
+                Log("Couldn't swap in the new version: " + detail);
+                AppUpdater.Discard(staged);
+                failure = UpdateAdvisor.DescribeAppUpdateFailure(swapFailure);
+            }
+        }
+
+        _installing = false;
+        _busyView = null;
+        _result = failure;
+        Render();
     }
 
     /// <summary>

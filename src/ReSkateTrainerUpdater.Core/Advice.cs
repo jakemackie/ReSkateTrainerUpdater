@@ -44,7 +44,13 @@ public sealed record UpdateContext(
     bool CheckingFolder,
     InstallFolderInfo? FolderInfo,
     OnlineOffer? Offer = null,
-    OnlineStatus Online = OnlineStatus.Checking);
+    OnlineStatus Online = OnlineStatus.Checking,
+    AppOffer? App = null);
+
+/// <summary>A newer version of this app is published. Built by <see cref="UpdateAdvisor.DescribeAppOffer"/>.</summary>
+/// <param name="Entry">The published version, with its download and hash.</param>
+/// <param name="CurrentVersion">The version that is running, for example 1.1.3.</param>
+public sealed record AppOffer(AppEntry Entry, string CurrentVersion);
 
 /// <summary>What the online check can do for the chosen folder.</summary>
 public enum OfferKind

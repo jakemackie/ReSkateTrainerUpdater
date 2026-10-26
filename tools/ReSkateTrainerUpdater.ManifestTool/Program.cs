@@ -13,6 +13,11 @@ const string Usage = """
           latest.json. The tag defaults to trainer-<edition>-<version>, for example trainer-tournament-0.9.2.
           Upload the zip to a GitHub Release with exactly that tag BEFORE pushing latest.json.
 
+      set-app <zip> [--manifest <path>]
+          Records a new version of the updater app itself in latest.json, so installed copies can update themselves.
+          The zip must be named ReSkateTrainerUpdater-<version>.zip and hold ReSkateTrainerUpdater.exe. It is checked
+          the same way the app will check it. The Release workflow runs this for you after publishing an app release.
+
       remove <edition> [--manifest <path>]
           Removes one edition (for example tournament) from latest.json, so the app stops offering it.
           Use this to pull a bad release quickly. Users who already installed it keep it.
@@ -58,6 +63,8 @@ return command switch
 {
     "add" when zipArgument is not null => Add(zipArgument, tag, manifestPath),
     "add" => UsageError("add needs the path of a Trainer zip."),
+    "set-app" when zipArgument is not null => SetApp(zipArgument, manifestPath),
+    "set-app" => UsageError("set-app needs the path of the app release zip."),
     "remove" when zipArgument is not null => Remove(zipArgument, manifestPath),
     "remove" => UsageError("remove needs an edition key, for example tournament."),
     "check" => Check(manifestPath),
@@ -159,6 +166,66 @@ static int Add(string zipPath, string? tag, string manifestPath)
     }
 }
 
+// ---------- set-app ----------
+
+static int SetApp(string zipPath, string manifestPath)
+{
+    if (!OperatingSystem.IsWindows())
+        return Error("set-app must run on Windows: the exe's version is read from Windows file properties.");
+    if (!File.Exists(zipPath)) return Error($"No such file: {zipPath}");
+
+    var fileName = Path.GetFileName(zipPath);
+    var match = Regex.Match(fileName, @"^ReSkateTrainerUpdater-(\d{1,4}\.\d{1,4}\.\d{1,4})\.zip$");
+    if (!match.Success)
+        return Error($"The file name \"{fileName}\" must look like ReSkateTrainerUpdater-1.2.0.zip, which is what the build script makes.");
+    string version = match.Groups[1].Value;
+
+    // Check it exactly as the app will: the exe must be there, be this app, and be this version.
+    var scratch = Path.Combine(Path.GetTempPath(), "ReSkateTrainerUpdater_setapp_" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(scratch);
+    try
+    {
+        var staged = AppUpdater.Stage(zipPath, Path.Combine(scratch, AppUpdater.ExeName), version);
+        if (!staged.Succeeded) return Error($"The zip isn't a valid {version} release of the app: {staged.Detail}");
+    }
+    finally
+    {
+        try { Directory.Delete(scratch, recursive: true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+    }
+
+    long size = new FileInfo(zipPath).Length;
+    string sha256;
+    using (var stream = File.OpenRead(zipPath)) sha256 = Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+
+    var entry = new AppEntry(version, OnlineSource.AppAssetUrl(version), size, sha256);
+    var problems = TrainerManifest.CheckApp(entry);
+    if (problems.Count > 0) return Error(string.Join(Environment.NewLine, problems));
+
+    var manifest = new TrainerManifest();
+    if (File.Exists(manifestPath))
+    {
+        var existing = TrainerManifest.Parse(File.ReadAllText(manifestPath));
+        if (existing.Manifest is null || existing.Problems.Count > 0)
+        {
+            return Error($"The existing {manifestPath} has problems, so it wasn't changed:{Environment.NewLine}  " +
+                         string.Join(Environment.NewLine + "  ", existing.Problems));
+        }
+        manifest = existing.Manifest;
+
+        if (manifest.App is { } previous && VersionCompare.Compare(previous.Version, version) > 0)
+            Console.WriteLine($"  Warning: latest.json had app version {previous.Version}, which is NEWER than this zip. Installed copies at {previous.Version} won't be offered this one.");
+    }
+
+    File.WriteAllText(manifestPath, manifest.WithApp(entry).ToJson());
+
+    Console.WriteLine($"Updated {manifestPath}");
+    Console.WriteLine($"  app      {version}");
+    Console.WriteLine($"  size     {size} bytes");
+    Console.WriteLine($"  sha256   {sha256}");
+    Console.WriteLine($"  url      {entry.Url}");
+    return 0;
+}
+
 // ---------- remove ----------
 
 static int Remove(string edition, string manifestPath)
@@ -170,7 +237,7 @@ static int Remove(string edition, string manifestPath)
     if (result.Manifest.Find(edition) is null)
         return Error($"latest.json has no edition \"{edition}\". It has: {string.Join(", ", result.Manifest.Editions.Keys.DefaultIfEmpty("(none)"))}");
 
-    var kept = new TrainerManifest(result.Manifest.Editions.Values.Where(e => e.Edition != edition));
+    var kept = result.Manifest.Without(edition);
     File.WriteAllText(manifestPath, kept.ToJson());
     Console.WriteLine($"Removed \"{edition}\" from {manifestPath}. Commit and push it to main; apps pick it up on their next start.");
     return 0;
@@ -196,6 +263,7 @@ static int Check(string manifestPath)
     Console.WriteLine(result.Manifest.Editions.Count == 0
         ? "latest.json is valid. No editions are published, so the app offers no online install."
         : "latest.json is valid: " + string.Join(", ", result.Manifest.Editions.Values.Select(e => e.TrainerText)));
+    if (result.Manifest.App is { } app) Console.WriteLine($"  The updater itself: version {app.Version} is published for self-update.");
     return 0;
 }
 
@@ -205,13 +273,51 @@ static async Task<int> VerifyAsync(string manifestPath)
 {
     if (Check(manifestPath) != 0) return 1;
     var manifest = TrainerManifest.Parse(File.ReadAllText(manifestPath)).Manifest!;
-    if (manifest.Editions.Count == 0) return 0;
+    if (manifest.Editions.Count == 0 && manifest.App is null) return 0;
 
     if (!OperatingSystem.IsWindows())
         return Error("verify must run on Windows: the product name in ReSkate.dll is read from Windows file properties.");
 
     using var client = TrainerDownloader.CreateClient();
     int failures = 0;
+
+    if (manifest.App is { } app)
+    {
+        Console.WriteLine();
+        Console.WriteLine($"updater {app.Version}: downloading {app.Url}");
+        var download = await TrainerDownloader.DownloadAsync(client, app);
+        if (!download.Succeeded)
+        {
+            failures++;
+            Console.WriteLine($"  FAILED ({download.Failure}): {download.Detail}");
+            if (download.Failure == DownloadFailure.HttpError)
+                Console.WriteLine("  Has the app release been published with exactly this tag and file name?");
+        }
+        else
+        {
+            var scratch = Path.Combine(Path.GetTempPath(), "ReSkateTrainerUpdater_verify_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(scratch);
+            try
+            {
+                Console.WriteLine("  " + download.Detail);
+                var staged = AppUpdater.Stage(download.ZipPath!, Path.Combine(scratch, AppUpdater.ExeName), app.Version);
+                if (staged.Succeeded)
+                {
+                    Console.WriteLine($"  OK: the zip holds {AppUpdater.ExeName} {app.Version}, as latest.json says.");
+                }
+                else
+                {
+                    failures++;
+                    Console.WriteLine("  FAILED: " + staged.Detail);
+                }
+            }
+            finally
+            {
+                TrainerDownloader.DeleteDownloadFolder(download.ZipPath!);
+                try { Directory.Delete(scratch, recursive: true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            }
+        }
+    }
 
     foreach (var entry in manifest.Editions.Values)
     {
@@ -253,7 +359,7 @@ static async Task<int> VerifyAsync(string manifestPath)
     }
 
     Console.WriteLine();
-    if (failures > 0) return Error($"{failures} edition(s) failed verification. The app would refuse them.");
+    if (failures > 0) return Error($"{failures} entry(ies) failed verification. The app would refuse them.");
     Console.WriteLine("Every published zip downloads and matches latest.json.");
     return 0;
 }

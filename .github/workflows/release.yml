@@ -1,6 +1,6 @@
 name: Release
 
-# Push a tag such as v1.0.0 to build the exe and publish it as a GitHub release.
+# Push a tag such as v1.0.0 to build the exe, publish it as a GitHub release, and record it in latest.json.
 on:
   push:
     tags: ['v*']
@@ -41,3 +41,36 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "${{ github.ref_name }}" (Get-ChildItem release/*.zip) --title "ReSkate Trainer Updater ${{ github.ref_name }}" --generate-notes --latest
+
+      # Tells every installed copy of the app that this version exists, so they can update themselves with one click.
+      # latest.json lives on main, so this takes main's copy, records this release in it, runs the same checks the app
+      # will run (the zip must hold this version's exe, and the published zip must download and match), and only then
+      # commits it. If main is protected against pushes by the workflow, this step fails after the release is already
+      # published: run the manifest tool's set-app command by hand (docs/RELEASING.md).
+      - name: Publish this version for self-update in latest.json
+        shell: pwsh
+        run: |
+          git fetch origin main:refs/remotes/origin/main
+          git checkout origin/main -- latest.json
+
+          $zip = (Get-ChildItem release/ReSkateTrainerUpdater-*.zip).FullName
+          dotnet run --project tools/ReSkateTrainerUpdater.ManifestTool -c Release -- set-app $zip
+          if ($LASTEXITCODE -ne 0) { throw "set-app failed" }
+          dotnet run --project tools/ReSkateTrainerUpdater.ManifestTool -c Release -- verify
+          if ($LASTEXITCODE -ne 0) { throw "verify failed" }
+
+          Copy-Item latest.json "$env:RUNNER_TEMP/latest.json"
+          git checkout -f -B main origin/main
+          if ($LASTEXITCODE -ne 0) { throw "git checkout failed" }
+          Copy-Item "$env:RUNNER_TEMP/latest.json" latest.json -Force
+
+          git diff --quiet latest.json
+          if ($LASTEXITCODE -eq 0) { Write-Host "latest.json already lists this version."; exit 0 }
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add latest.json
+          git commit -m "Publish app ${{ github.ref_name }} for self-update"
+          if ($LASTEXITCODE -ne 0) { throw "git commit failed" }
+          git push origin main
+          if ($LASTEXITCODE -ne 0) { throw "git push failed. Is main protected? Run set-app by hand, see docs/RELEASING.md" }

@@ -24,6 +24,9 @@ public enum TileAction
 
     /// <summary>Install the zip the user chose.</summary>
     InstallZip,
+
+    /// <summary>Download a newer version of this app, verify it, swap it in and restart.</summary>
+    UpdateApp,
 }
 
 /// <summary>The look of the big action tile.</summary>
@@ -90,4 +93,7 @@ public enum BusyStage
     Downloading,
     Unpacking,
     Installing,
+
+    /// <summary>The new version of the app is in place and is about to open.</summary>
+    Restarting,
 }

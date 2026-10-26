@@ -128,14 +128,14 @@ public static class TrainerDownloader
     /// </summary>
     public static async Task<DownloadResult> DownloadAsync(
         HttpClient client,
-        ManifestEntry entry,
+        IPublishedFile entry,
         IProgress<DownloadProgress>? progress = null,
         string? parentFolder = null,
         TimeSpan? timeout = null,
         CancellationToken cancellationToken = default)
     {
         // Checked again here, so no code path can download from anywhere else.
-        if (!OnlineSource.IsTrustedDownloadUrl(entry.Url))
+        if (!entry.HasTrustedUrl)
             return Fail(DownloadFailure.UntrustedUrl, "Refused to download from " + entry.Url);
         if (entry.SizeBytes <= 0 || entry.SizeBytes > TrainerManifest.MaxZipBytes)
             return Fail(DownloadFailure.SizeMismatch, $"latest.json gives an impossible size ({entry.SizeBytes} bytes).");

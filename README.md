@@ -14,6 +14,8 @@ This is an unofficial helper. It isn't made by, or affiliated with, the ReSkate 
 4. Click the big blue tile. It says **UPDATE** when a newer Trainer is published, or **INSTALL** for an empty folder. When you're current it goes dark and says **UP TO DATE**.
 5. Start `ReSkateLauncher.exe` as usual.
 
+**The updater updates itself.** When a new version of this app is published, the big tile says **UPDATE APP**. One click downloads it, checks it, swaps it in and restarts. You only ever download the app by hand once. If it says it can't replace itself, the app is in a folder you can't write to (such as `Program Files`): move it to your Desktop or another folder you own.
+
 **Offline, or a different version:** drop a ReSkate Trainer zip onto the window (or click the zip tile to browse), then click the **INSTALL** tile. A zip inside a zip, or one wrapped in a folder, is fine.
 
 Windows may show an "Unknown publisher" SmartScreen warning because the exe isn't code-signed. Choose **More info**, then **Run anyway**.
@@ -44,7 +46,7 @@ Windows may show an "Unknown publisher" SmartScreen warning because the exe isn'
 The app contacts GitHub only, and only at two moments:
 
 - **On start-up** it downloads [`latest.json`](latest.json) from this repository to see whether a newer Trainer is published.
-- **When you click Update or Install** it downloads that one Trainer zip from this repository's Releases.
+- **When you click the big tile** it downloads one zip from this repository's Releases: a Trainer, or a new version of this app.
 
 It sends nothing about you, your PC or your game: no IDs, folder paths, versions or usage data. GitHub sees your IP address, as with any visit to github.com. It never installs anything without your click. If you're offline, it skips the check silently and the drop zone works as before.
 

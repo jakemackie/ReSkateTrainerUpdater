@@ -3,7 +3,7 @@
   <!-- Settings shared by every project in the repository. -->
   <PropertyGroup>
     <!-- The single place the app version lives. scripts/build-release.ps1 reads it too. -->
-    <Version>1.1.3</Version>
+    <Version>1.2.0</Version>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <!-- Any compiler warning fails the build, so a mistake can't slip through unnoticed. -->

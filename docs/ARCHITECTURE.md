@@ -142,6 +142,39 @@ big tile clicked (INSTALL or UPDATE) ──► TrainerDownloader.DownloadAsync(e
 
 The online route adds checks in front of the normal install and replaces none of them.
 
+## Updating the app itself
+
+`AppUpdater` replaces the running exe with a newer one. A running exe can be renamed but not overwritten, which
+shapes the whole design.
+
+```
+start-up ──► manifest read ──► UpdateAdvisor.DescribeAppOffer(manifest, runningVersion, canUpdateInPlace)
+                               newer app.version, and the exe isn't being run through `dotnet`  ──►  an AppOffer
+UpdateAdvisor.DescribeHome shows the blue UPDATE APP tile, ahead of any Trainer update
+
+UPDATE APP clicked ──► TrainerDownloader.DownloadAsync(app entry)     the same checked download as a Trainer:
+                                                                      trusted URL, exact size, exact SHA-256
+                   ──► AppUpdater.Stage(zip, currentExe, version)     takes ReSkateTrainerUpdater.exe from the zip root,
+                                                                      saves it as <exe>.new, and checks that it is a
+                                                                      64-bit program, is "ReSkate Trainer Updater", and is
+                                                                      exactly the published version. Else it is deleted.
+                   ──► AppUpdater.Swap(currentExe, staged)            <exe> -> <exe>.old, then <exe>.new -> <exe>.
+                                                                      If the second rename fails the first is undone.
+                   ──► Process.Start(<exe>, "--updated") and close    the new copy shows "Updated to version X" and
+                                                                      calls AppUpdater.CleanUpLeftovers, which retries
+                                                                      deleting <exe>.old while the old process exits
+```
+
+The current exe is untouched until the swap, which is two renames on one volume. Every earlier failure leaves nothing
+behind except, at worst, a temp download that the start-up cleanup removes. If the app is in a folder it can't write to,
+`Stage` fails with `NotWritable` before anything is changed.
+
+`ProductVersion` of the built exe is `1.2.0+<commit>`. The part after the `+` is not the version, so `Stage` compares
+only what comes before it.
+
+On release, the workflow runs `ManifestTool set-app`, which runs the same `Stage` against the zip it just built. A zip
+that wouldn't pass the app's own checks is never recorded in latest.json.
+
 ## The window
 
 The window follows the ReSkate launcher: no title bar, with minimise and close buttons drawn in the top-right

@@ -66,6 +66,29 @@ public static class OnlineSource
     /// <summary>The manifest key for a Trainer whose binary names no edition.</summary>
     public const string StandardEdition = "standard";
 
+    /// <summary>The tag of an app release, for example v1.2.0. Tags starting with v are app releases only.</summary>
+    public static string AppReleaseTag(string version) => "v" + version;
+
+    /// <summary>The file name of an app release zip, for example ReSkateTrainerUpdater-1.2.0.zip.</summary>
+    public static string AppZipFileName(string version) => $"ReSkateTrainerUpdater-{version}.zip";
+
+    /// <summary>The download URL of an app release zip.</summary>
+    public static string AppAssetUrl(string version) => ReleaseAssetUrl(AppReleaseTag(version), AppZipFileName(version));
+
+    /// <summary>
+    /// True only for this app's own release asset of that version: the trusted download URL, with tag
+    /// v{version} and file ReSkateTrainerUpdater-{version}.zip. A self-update installs code, so it is held to a
+    /// stricter rule than a Trainer zip, which may use any tag.
+    /// </summary>
+    public static bool IsTrustedAppUrl(string? url, string? version)
+    {
+        if (string.IsNullOrEmpty(version) || !IsTrustedDownloadUrl(url)) return false;
+        var rest = new Uri(url!).AbsolutePath[ReleaseDownloadPathPrefix.Length..].Split('/');
+        return rest.Length == 2
+            && string.Equals(Uri.UnescapeDataString(rest[0]), AppReleaseTag(version), StringComparison.Ordinal)
+            && string.Equals(Uri.UnescapeDataString(rest[1]), AppZipFileName(version), StringComparison.Ordinal);
+    }
+
     /// <summary>
     /// The manifest key for an edition: lower case, spaces as dashes. The standard edition (no edition name in the
     /// binary) is "standard". "Tournament" becomes "tournament".

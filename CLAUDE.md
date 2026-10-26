@@ -22,6 +22,10 @@ The app has two ways to get the Trainer:
 
 Both routes end in the same `UpdaterForm.InstallAsync`, which calls `TrainerInstaller.Install`.
 
+The app also **updates itself**. If `latest.json` lists a newer version of the app, the big tile becomes
+**UPDATE APP** (ahead of any Trainer update). One click downloads the app's release zip, checks it, swaps the running
+exe for it (`AppUpdater`) and restarts. See `docs/ONLINE-UPDATES.md` and `docs/ARCHITECTURE.md`.
+
 ## Commands
 
 Run every command from the repository root. You need the .NET 8 SDK.
@@ -35,6 +39,7 @@ Run every command from the repository root. You need the .NET 8 SDK.
 | Check `latest.json` (no network) | `dotnet run --project tools/ReSkateTrainerUpdater.ManifestTool -- check` | Any OS |
 | Verify `latest.json` against GitHub | `dotnet run --project tools/ReSkateTrainerUpdater.ManifestTool -- verify` | Windows only, needs internet |
 | Add a Trainer zip to `latest.json` | `dotnet run --project tools/ReSkateTrainerUpdater.ManifestTool -- add <zip>` | Windows only |
+| Record an app release in `latest.json` | `dotnet run --project tools/ReSkateTrainerUpdater.ManifestTool -- set-app <zip>` | Windows only. The Release workflow runs it. |
 | Build the release exe and zip | `powershell -ExecutionPolicy Bypass -File .\scripts\build-release.ps1` | Windows only |
 
 The tests print one `pass` or `FAIL` line per check and end with `All N checks passed.` The exit code is non-zero
@@ -105,13 +110,31 @@ weakens the download checks, or breaks the release process.
    confirms the version, edition and build inside the DLL. On any failure the download is deleted and the folder
    is not touched.
 14. **Never install without a click.** The app may tell the user an update exists. It must never download or
-   install a Trainer on its own.
+   install a Trainer, or a new version of itself, on its own.
 15. **Network failures are silent.** If `latest.json` can't be fetched or read, the status card says it couldn't
     check (a calm grey "OFFLINE" pill) and one line goes to the activity log. No dialogs and no error colours.
     Dropping a zip must keep working with no internet.
 16. **No telemetry.** The app sends two kinds of request only: a GET for `latest.json` on start-up, and a GET
-    for the zip when the user clicks the big tile. The only header added is the User-Agent
+    for one zip (a Trainer, or a new version of the app) when the user clicks the big tile. The only header added is the User-Agent
     `ReSkateTrainerUpdater/<version>`. Don't add analytics, IDs, crash reporting, or anything else.
+
+### Updating the app itself
+
+A self-update installs code, so it is held to a stricter standard than a Trainer.
+
+- **An app zip is only accepted from its own release.** `OnlineSource.IsTrustedAppUrl` requires tag `v<version>` and
+  file `ReSkateTrainerUpdater-<version>.zip` in this repository. `AppEntry.HasTrustedUrl` uses it, and
+  `TrainerDownloader.DownloadAsync` checks `HasTrustedUrl` before every request. Never loosen it.
+- **Only `AppUpdater` replaces the exe**, and only after `AppUpdater.Stage` has checked that the zip holds
+  `ReSkateTrainerUpdater.exe` at its root, as a 64-bit program, named "ReSkate Trainer Updater", at exactly the
+  published version. `Swap` must put the original back if the second rename fails. Keep every `Invariant:` check in
+  `AppUpdateTests.cs` passing.
+- **Never overwrite or delete the running exe.** Windows allows renaming it, not overwriting it. That is why the swap
+  is two renames and the old file is deleted by the next start (`CleanUpLeftovers`).
+- **Don't publish an app entry by hand.** The Release workflow runs `ManifestTool set-app`, which runs the same
+  `Stage` checks on the zip it just built. Hand-editing the `app` block defeats that.
+- **The version in the exe must match `<Version>`.** `Stage` compares the exe's product version (the part before
+  any `+`) with latest.json. Don't change how the version is stamped without updating both.
 
 ### latest.json
 
@@ -150,6 +173,7 @@ weakens the download checks, or breaks the release process.
 | --- | --- |
 | `src/ReSkateTrainerUpdater.Core/OnlineSource.cs` | The trusted repo, the manifest URL, the trusted-download-URL rule, and edition keys |
 | `src/ReSkateTrainerUpdater.Core/TrainerManifest.cs` | `latest.json`: the model, the strict parser, the canonical writer |
+| `src/ReSkateTrainerUpdater.Core/AppUpdater.cs` | Replacing the running exe: `Stage`, `Swap`, `CleanUpLeftovers`, `CanUpdateInPlace` |
 | `src/ReSkateTrainerUpdater.Core/TrainerDownloader.cs` | The HTTP client, fetching `latest.json`, downloading and checking a zip, and `CheckPackageMatches` |
 | `src/ReSkateTrainerUpdater.Core/TrainerPackageLoader.cs` | Unpacking a zip (nested zips, wrapper folders) and validating it |
 | `src/ReSkateTrainerUpdater.Core/ReSkateScanner.cs` | Reading versions from `ReSkate.dll` / `ReSkateLauncher.exe` |
@@ -166,7 +190,7 @@ weakens the download checks, or breaks the release process.
 | `src/ReSkateTrainerUpdater/Ui/GameFonts.cs`, `TextPaint.cs` | Loading the embedded fonts, and drawing text with them |
 | `src/ReSkateTrainerUpdater/Assets/Fonts/` | Permanent Marker and Montserrat, the same fonts the launcher uses |
 | `THIRD-PARTY-NOTICES.md` | Font licences. Ships in the release zip. |
-| `tests/ReSkateTrainerUpdater.Tests/` | The console test runner. `OnlineTests.cs` covers everything online. |
+| `tests/ReSkateTrainerUpdater.Tests/` | The console test runner. `OnlineTests.cs` covers everything online, `AppUpdateTests.cs` the self-update. |
 | `tools/ReSkateTrainerUpdater.ManifestTool/` | Maintainer tool: `add`, `check`, `verify` for `latest.json` |
 | `latest.json` | The published manifest, read by every installed copy of the app |
 | `docs/ARCHITECTURE.md` | How install, rollback, version reading and online updates work, and why |
@@ -197,6 +221,12 @@ weakens the download checks, or breaks the release process.
   buttons. The layout is fixed, so a maximised window would just be a small app in a big black rectangle.
 - **The top-left chip shows GitHub's status, not a user name.** It is the equivalent of the launcher's "Welcome"
   chip: green dot when `latest.json` was read, blue while checking, grey when it couldn't be reached.
+- **`ReSkateTrainerUpdater.exe.old` or `.new` may sit beside the exe for a moment after an update.** They are the
+  previous version and a staged one. The new copy deletes them on start-up.
+- **UPDATE APP is shown before a Trainer update, and even before a folder is chosen.** The new version may improve
+  how Trainers are installed, and it doesn't depend on any folder.
+- **Versions before 1.2.0 can't update themselves.** They have no update code. 1.2.0 was the last version people had to
+  download by hand.
 - **After an install, the zip is cleared** (both a dropped zip and a downloaded one), so the screen shows what is
   installed now rather than a second Install button. The outcome stays on the status card until the user changes
   something.

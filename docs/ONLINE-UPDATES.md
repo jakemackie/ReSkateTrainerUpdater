@@ -56,6 +56,46 @@ only a line in the activity log.
 Don't edit this file by hand. `ManifestTool add` writes it, and the tests fail if it isn't in exactly the
 format the tool writes.
 
+## The app's own entry (self-update)
+
+latest.json can also say which version of the updater itself is the newest. The Release workflow adds this entry for you
+when you publish an app release (see `RELEASING.md`). It is optional, and older apps ignore it.
+
+```json
+{
+  "schemaVersion": 1,
+  "app": {
+    "version": "1.2.0",
+    "url": "https://github.com/jakemackie/ReSkateTrainerUpdater/releases/download/v1.2.0/ReSkateTrainerUpdater-1.2.0.zip",
+    "sizeBytes": 63088693,
+    "sha256": "0045cecea3920f37f20150e92b2073e8684b81b67efecddaacb254f9e5eb842d"
+  },
+  "editions": { }
+}
+```
+
+| Field | Required | Rule |
+| --- | --- | --- |
+| `version` | yes | `major.minor.patch`. The app offers the update when this is higher than its own version, compared as numbers. |
+| `url` | yes | Exactly `https://github.com/jakemackie/ReSkateTrainerUpdater/releases/download/v<version>/ReSkateTrainerUpdater-<version>.zip`. Stricter than a Trainer URL: the tag must be `v<version>` and the file name must match. |
+| `sizeBytes` | yes | The exact size of the zip. |
+| `sha256` | yes | The SHA-256 of the zip. |
+
+A self-update installs code, so it is checked in more places than a Trainer:
+
+1. The URL must be this app's own release asset for that exact version (`OnlineSource.IsTrustedAppUrl`).
+2. The downloaded zip must match the size and SHA-256 in latest.json exactly, or it is deleted.
+3. The zip must hold `ReSkateTrainerUpdater.exe` at its top level, which must be a 64-bit Windows program that says
+   it is "ReSkate Trainer Updater" and is exactly the published version.
+4. Only then is it swapped in. The running exe is renamed to `.old`, the new one is renamed into its place, and if
+   the second rename fails the first is undone. The new copy starts with `--updated`, shows "Updated to version X",
+   and deletes the `.old` file.
+
+What the user sees: a blue **UPDATE APP** tile, ahead of any Trainer update. One click downloads, checks, swaps and
+restarts, and the new version opens on a green **DONE** card. If the app is in a folder it can't write to, for example
+`C:\Program Files`, nothing changes and the card says to move it to a folder the user owns. The app never updates
+itself without a click, and a copy started through `dotnet` (a developer's) never offers it.
+
 ## What the app does
 
 On start-up the app makes one request for `latest.json`, with a 6-second limit. When the manifest arrives, and
@@ -107,7 +147,8 @@ can publish anything to every user. So:
 The app makes two kinds of request, both to GitHub:
 
 - A GET for `latest.json`, once per start-up.
-- A GET for one Trainer zip, only when the user clicks **Update** or **Install … Edition**.
+- A GET for one zip, only when the user clicks the big tile: a Trainer (**UPDATE** or **INSTALL**) or a new version
+  of the app itself (**UPDATE APP**).
 
 The only header it adds is `User-Agent: ReSkateTrainerUpdater/<version>`. It sends no identifiers, folder paths,
 installed versions or usage data. GitHub sees the user's IP address, as with any visit to github.com.

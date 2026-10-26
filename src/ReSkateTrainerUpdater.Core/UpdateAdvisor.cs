@@ -130,6 +130,15 @@ public static class UpdateAdvisor
             latest);
     }
 
+    /// <summary>
+    /// Whether a newer version of this app is published. Null when it is up to date, when latest.json lists none, or when
+    /// the app can't replace itself (for example when run through `dotnet`).
+    /// </summary>
+    public static AppOffer? DescribeAppOffer(TrainerManifest? manifest, string currentVersion, bool canUpdateInPlace) =>
+        canUpdateInPlace && manifest?.App is { } app && VersionCompare.Compare(currentVersion, app.Version) < 0
+            ? new AppOffer(app, currentVersion)
+            : null;
+
     // ---------- The main window ----------
 
     private static ActionTile Idle(string title, string subtitle) =>
@@ -194,9 +203,28 @@ public static class UpdateAdvisor
         return new HomeView(pill, pillSeverity, pillSeverity == Severity.Error ? "Can't install yet" : zipName, advice.Message, rows, tile);
     }
 
+    // A newer version of the app itself comes before everything else: the new version may improve how Trainers are installed.
+    private static HomeView DescribeAppUpdateHome(UpdateContext c, AppOffer offer)
+    {
+        var app = offer.Entry;
+        var rows = new List<StatusRow>();
+        if (c.Folder is not null && !c.CheckingFolder && c.FolderInfo is { Exists: true, IsSteamSkateFolder: false, HasRuntime: true } folder)
+        {
+            var (text, severity) = DescribeFolder(folder);
+            rows.Add(new StatusRow(text, severity));
+        }
+        rows.Add(new StatusRow($"New updater: {app.Version} · {ByteSize.Format(app.SizeBytes)}", Severity.Highlight));
+
+        return new HomeView("APP UPDATE", Severity.Highlight, "New version of the updater",
+            $"{offer.CurrentVersion} → {app.Version}. The app restarts itself when it's done.", rows,
+            new ActionTile("UPDATE APP", $"{offer.CurrentVersion} → {app.Version}", TileStyle.Primary, TileAction.UpdateApp));
+    }
+
     // No zip chosen: show what the online check found for this folder.
     private static HomeView DescribeOnlineHome(UpdateContext c)
     {
+        if (c.App is { } appOffer) return DescribeAppUpdateHome(c, appOffer);
+
         if (c.Folder is null)
         {
             return Home("SET UP", Severity.Neutral, "Choose your folder",
@@ -320,6 +348,10 @@ public static class UpdateAdvisor
                 return Home("VERIFYING", Severity.Working, "Checking the download...", what,
                     new ActionTile("VERIFYING", "Almost there", TileStyle.Primary, TileAction.None, Working: true));
 
+            case BusyStage.Restarting:
+                return Home("RESTARTING", Severity.Working, "Restarting...", "The new version opens in a moment.",
+                    new ActionTile("RESTARTING", what, TileStyle.Primary, TileAction.None, Working: true));
+
             default:
                 return Home("INSTALLING", Severity.Working, "Installing...", "Please don't close the app.",
                     new ActionTile("INSTALLING", what, TileStyle.Primary, TileAction.None, Working: true));
@@ -376,6 +408,29 @@ public static class UpdateAdvisor
             "Couldn't save the download to your temp folder. Nothing was changed.",
             Severity.Error),
     };
+
+    /// <summary>The message when the new version of the app couldn't be put in place. The current version is always left working.</summary>
+    public static Advice DescribeAppUpdateFailure(AppUpdateFailure failure) => failure switch
+    {
+        AppUpdateFailure.NotWritable => new Advice(
+            "The updater can't replace itself in this folder. Move it to a folder you own, such as your Desktop, or download the new version from GitHub. Nothing was changed.",
+            Severity.Warning),
+        AppUpdateFailure.BadPackage => new Advice(
+            "The downloaded update isn't the version that was published, so it wasn't used. Nothing was changed.",
+            Severity.Error),
+        _ => new Advice(
+            "Couldn't swap in the new version, so your current one is untouched. Close and reopen the app, or download the new version from GitHub.",
+            Severity.Warning),
+    };
+
+    /// <summary>When the new version is in place but couldn't be started, so the old one is still showing.</summary>
+    public static Advice DescribeAppRestartFailed(string version) =>
+        new($"Version {version} is installed, but it couldn't open by itself. Close this window and open the updater again.",
+            Severity.Warning);
+
+    /// <summary>Shown by the new version the first time it opens after an update.</summary>
+    public static Advice DescribeAppUpdated(string version) =>
+        new($"Updated to version {version}. You have the newest updater.", Severity.Good);
 
     /// <summary>The message when the downloaded zip isn't what latest.json promised.</summary>
     public static Advice DescribePackageMismatch(string reason) =>

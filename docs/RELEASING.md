@@ -34,7 +34,29 @@ tool refuses it.
 4. Watch the **Release** workflow in the Actions tab. It checks that the tag matches `<Version>`, runs the
    tests, builds the single-file exe, zips it together with `THIRD-PARTY-NOTICES.md` (the font licences), and
    creates the GitHub Release with that zip attached, marked Latest.
-5. Open the Release, download the zip, and run the exe once on a Windows PC to confirm it starts.
+5. The same workflow then **records the release in `latest.json`** so that installed copies can update themselves.
+   It takes main's `latest.json`, runs `set-app` (which refuses a zip that isn't this version's genuine exe), runs
+   `verify` (which downloads the published zip and checks it), and commits the result to `main` as
+   "Publish app v1.2.0 for self-update". You don't touch `latest.json` for an app release.
+6. Open the Release, download the zip, and run the exe once on a Windows PC to confirm it starts.
+
+**Installed copies update themselves** the next time they start: the big tile says **UPDATE APP**. Allow about
+5 minutes for GitHub's cache of `latest.json`. Copies older than 1.2.0 have no update code, so they need one last
+manual download of a version from 1.2.0 on. After that they never do.
+
+**If the last step of the workflow fails** (the release is published, but "Publish this version for self-update"
+is red), the most likely cause is a rule on `main` that stops the workflow pushing. Either allow
+`github-actions[bot]` to push, or record the release by hand from the repository root:
+
+```
+dotnet run --project tools/ReSkateTrainerUpdater.ManifestTool -- set-app C:\path\to\ReSkateTrainerUpdater-1.2.0.zip
+dotnet run --project tools/ReSkateTrainerUpdater.ManifestTool -- verify
+git add latest.json
+git commit -m "Publish app v1.2.0 for self-update"
+git push
+```
+
+Use the zip attached to the Release (download it), not a rebuilt one: its hash has to match.
 
 If the workflow fails at "Check the tag matches the version", delete the tag (`git push --delete origin v1.1.0`
 and `git tag -d v1.1.0`), fix `<Version>`, and start again from step 2.
@@ -147,10 +169,20 @@ downgrades anyone automatically. Tell them on Discord to drop the older zip onto
 
 Don't delete a Release that `latest.json` still points to. Users would get a download error, and CI fails.
 
+## Pulling a bad app release
+
+Installed copies only update forward, so the fix for a bad app version is a newer good one: bump `<Version>`, tag, and
+release again. The workflow points `latest.json` at it, and everyone who took the bad one is offered it.
+
+To stop offering a bad version **right away**, before the fix is ready, remove the `app` entry from `latest.json` by
+hand (delete the `"app": { ... }` block, then run `check`) and push. Copies that already updated keep the bad
+version until the fixed one is published. Don't delete a Release that `latest.json` still points to.
+
 ## Never
 
 - Commit a zip, exe or DLL to the repository. A zip about 17 MB in size stays in git history forever, every
   clone downloads it, and GitHub blocks files over 100 MB. Release assets cost nothing.
-- Edit `latest.json` by hand. The tests fail if it isn't in the tool's exact format.
+- Edit `latest.json` by hand, except to remove the `app` block in an emergency. The tests fail if it isn't in the
+  tool's exact format.
 - Replace the zip on an existing Release with a different file. The hash in `latest.json` would no longer
   match, and every download would be refused. Publish a new version with a new tag instead.

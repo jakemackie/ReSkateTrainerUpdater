@@ -4,6 +4,36 @@ using System.Text.RegularExpressions;
 
 namespace ReSkateTrainerUpdater.Core;
 
+/// <summary>A zip published on GitHub that the app can download and check: a Trainer or a new version of the app itself.</summary>
+public interface IPublishedFile
+{
+    /// <summary>Where it is downloaded from.</summary>
+    string Url { get; }
+
+    /// <summary>The exact size of the zip in bytes.</summary>
+    long SizeBytes { get; }
+
+    /// <summary>The SHA-256 of the zip, 64 lower-case hex characters.</summary>
+    string Sha256 { get; }
+
+    /// <summary>The zip's file name, taken from the URL.</summary>
+    string FileName { get; }
+
+    /// <summary>True if <see cref="Url"/> is one the app is allowed to download from. Checked again before every request.</summary>
+    bool HasTrustedUrl { get; }
+}
+
+/// <summary>The newest published version of this app itself, as listed in latest.json.</summary>
+/// <param name="Version">For example 1.2.0.</param>
+/// <param name="Url">Always <see cref="OnlineSource.AppAssetUrl"/> for this version.</param>
+/// <param name="SizeBytes">The exact size of the zip in bytes.</param>
+/// <param name="Sha256">The SHA-256 of the zip, 64 lower-case hex characters.</param>
+public sealed record AppEntry(string Version, string Url, long SizeBytes, string Sha256) : IPublishedFile
+{
+    public string FileName => Uri.UnescapeDataString(Url[(Url.LastIndexOf('/') + 1)..]);
+    public bool HasTrustedUrl => OnlineSource.IsTrustedAppUrl(Url, Version);
+}
+
 /// <summary>One edition's newest published Trainer, as listed in latest.json.</summary>
 /// <param name="Edition">The manifest key, for example "tournament". See <see cref="OnlineSource.EditionKey"/>.</param>
 /// <param name="Version">The Trainer version, for example 0.9.2.</param>
@@ -19,8 +49,10 @@ public sealed record ManifestEntry(
     string? ReSkateVersion,
     string Url,
     long SizeBytes,
-    string Sha256)
+    string Sha256) : IPublishedFile
 {
+    public bool HasTrustedUrl => OnlineSource.IsTrustedDownloadUrl(Url);
+
     /// <summary>"Tournament" for the key "tournament".</summary>
     public string EditionName => OnlineSource.EditionDisplayName(Edition);
 
@@ -56,10 +88,14 @@ public sealed class TrainerManifest
 
     private readonly SortedDictionary<string, ManifestEntry> _editions = new(StringComparer.Ordinal);
 
-    public TrainerManifest(IEnumerable<ManifestEntry>? entries = null)
+    public TrainerManifest(IEnumerable<ManifestEntry>? entries = null, AppEntry? app = null)
     {
         foreach (var entry in entries ?? Enumerable.Empty<ManifestEntry>()) _editions[entry.Edition] = entry;
+        App = app;
     }
+
+    /// <summary>The newest published version of this app itself, if latest.json lists one.</summary>
+    public AppEntry? App { get; }
 
     /// <summary>Every valid entry, by manifest key, sorted.</summary>
     public IReadOnlyDictionary<string, ManifestEntry> Editions => _editions;
@@ -74,9 +110,21 @@ public sealed class TrainerManifest
         var problems = CheckEntry(entry);
         if (problems.Count > 0) throw new ArgumentException(string.Join(" ", problems), nameof(entry));
 
-        var copy = new TrainerManifest(_editions.Values);
+        var copy = new TrainerManifest(_editions.Values, App);
         copy._editions[entry.Edition] = entry;
         return copy;
+    }
+
+    /// <summary>A copy of this manifest without one edition.</summary>
+    public TrainerManifest Without(string editionKey) =>
+        new(_editions.Values.Where(e => e.Edition != editionKey), App);
+
+    /// <summary>A copy of this manifest with the app's own newest version set. Throws if the entry fails a check.</summary>
+    public TrainerManifest WithApp(AppEntry app)
+    {
+        var problems = CheckApp(app);
+        if (problems.Count > 0) throw new ArgumentException(string.Join(" ", problems), nameof(app));
+        return new TrainerManifest(_editions.Values, app);
     }
 
     // ---------- Reading ----------
@@ -121,6 +169,7 @@ public sealed class TrainerManifest
                 return Fail("latest.json has no \"editions\" object.");
 
             var problems = new List<string>();
+            var app = ReadApp(root, problems);
             var entries = new List<ManifestEntry>();
             foreach (var property in editions.EnumerateObject())
             {
@@ -141,10 +190,50 @@ public sealed class TrainerManifest
                 entries.Add(entry);
             }
 
-            return new ManifestReadResult(new TrainerManifest(entries), problems);
+            return new ManifestReadResult(new TrainerManifest(entries, app), problems);
         }
 
         static ManifestReadResult Fail(string problem) => new(null, new[] { problem });
+    }
+
+    // The optional "app" entry. A bad one is reported and left out; it never spoils the editions.
+    private static AppEntry? ReadApp(JsonElement root, List<string> problems)
+    {
+        if (!root.TryGetProperty("app", out var value)) return null;
+        if (value.ValueKind != JsonValueKind.Object)
+        {
+            problems.Add("The \"app\" entry was ignored: it must be an object.");
+            return null;
+        }
+
+        string? Text(string name) =>
+            value.TryGetProperty(name, out var p) && p.ValueKind == JsonValueKind.String ? p.GetString() : null;
+        long size = value.TryGetProperty("sizeBytes", out var s) && s.ValueKind == JsonValueKind.Number && s.TryGetInt64(out long n) ? n : -1;
+
+        var app = new AppEntry(Text("version") ?? "", Text("url") ?? "", size, (Text("sha256") ?? "").ToLowerInvariant());
+        var appProblems = CheckApp(app);
+        if (appProblems.Count == 0) return app;
+
+        problems.Add("The \"app\" entry was ignored: " + string.Join(" ", appProblems));
+        return null;
+    }
+
+    /// <summary>Every reason the app entry can't be trusted. Empty means it is fine.</summary>
+    public static IReadOnlyList<string> CheckApp(AppEntry app)
+    {
+        var problems = new List<string>();
+        if (!VersionPattern.IsMatch(app.Version))
+            problems.Add($"\"version\" must look like 1.2.0 (it is \"{app.Version}\").");
+        if (!OnlineSource.IsTrustedAppUrl(app.Url, app.Version))
+        {
+            problems.Add($"\"url\" must be {OnlineSource.AppAssetUrl(VersionPattern.IsMatch(app.Version) ? app.Version : "X.Y.Z")} " +
+                         $"(it is \"{app.Url}\").");
+        }
+        if (app.SizeBytes <= 0 || app.SizeBytes > MaxZipBytes)
+            problems.Add($"\"sizeBytes\" must be a positive whole number no larger than {MaxZipBytes} (it is {app.SizeBytes}).");
+        if (!Sha256Pattern.IsMatch(app.Sha256))
+            problems.Add("\"sha256\" must be exactly 64 lower-case hex characters.");
+        return problems;
     }
 
     private static ManifestEntry? ReadEntry(JsonProperty property, List<string> problems)
@@ -209,6 +298,15 @@ public sealed class TrainerManifest
         {
             writer.WriteStartObject();
             writer.WriteNumber("schemaVersion", SupportedSchemaVersion);
+            if (App is { } app)
+            {
+                writer.WriteStartObject("app");
+                writer.WriteString("version", app.Version);
+                writer.WriteString("url", app.Url);
+                writer.WriteNumber("sizeBytes", app.SizeBytes);
+                writer.WriteString("sha256", app.Sha256);
+                writer.WriteEndObject();
+            }
             writer.WriteStartObject("editions");
             foreach (var entry in _editions.Values)
             {
