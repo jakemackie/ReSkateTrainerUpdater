@@ -1,13 +1,12 @@
+using System.Drawing.Drawing2D;
 using ReSkateTrainerUpdater.Ui;
 
 namespace ReSkateTrainerUpdater.Ui.Controls;
 
-/// <summary>A card with a title, a one-line description and an animated on/off switch.</summary>
+/// <summary>A flat tile with a title, a one-line description and a square checkbox, like the options in the launcher's settings.</summary>
 internal sealed class OptionRow : BufferedControl
 {
     private bool _checked;
-    private float _pos; // 0 = off, 1 = on (animated)
-    private readonly System.Windows.Forms.Timer _timer = new() { Interval = 15 };
 
     public string Title { get; set; } = "";
     public string Description { get; set; } = "";
@@ -17,22 +16,6 @@ internal sealed class OptionRow : BufferedControl
     {
         TabStop = true;
         Cursor = Cursors.Hand;
-
-        _timer.Tick += (_, _) =>
-        {
-            const float step = 0.18f;
-            float target = _checked ? 1f : 0f;
-            if (Math.Abs(target - _pos) <= step)
-            {
-                _pos = target;
-                _timer.Stop();
-            }
-            else
-            {
-                _pos += target > _pos ? step : -step;
-            }
-            Invalidate();
-        };
     }
 
     public bool Checked
@@ -42,16 +25,15 @@ internal sealed class OptionRow : BufferedControl
         {
             if (_checked == value) return;
             _checked = value;
-            _timer.Start();
+            Invalidate();
             CheckedChanged?.Invoke(this, EventArgs.Empty);
         }
     }
 
-    /// <summary>Sets the state without animating or raising CheckedChanged (for start-up).</summary>
+    /// <summary>Sets the state without raising CheckedChanged (for start-up).</summary>
     public void SetCheckedImmediate(bool value)
     {
         _checked = value;
-        _pos = value ? 1f : 0f;
         Invalidate();
     }
 
@@ -61,52 +43,40 @@ internal sealed class OptionRow : BufferedControl
         base.OnClick(e);
     }
 
-    protected override void Dispose(bool disposing)
-    {
-        if (disposing) _timer.Dispose();
-        base.Dispose(disposing);
-    }
-
     protected override void OnPaint(PaintEventArgs e)
     {
         var g = Prepare(e);
-        var rect = new RectangleF(0.5f, 0.5f, Width - 1.5f, Height - 1.5f);
+        var area = new RectangleF(0, 0, Width, Height);
 
-        using (var path = Theme.RoundedRect(rect, S(12)))
-        using (var brush = new SolidBrush(Hover ? Theme.CardHover : Theme.Card))
-        using (var pen = new Pen(Theme.Border))
+        using (var brush = new SolidBrush(Hover ? Theme.TileHover : Theme.Tile))
         {
-            g.FillPath(brush, path);
-            g.DrawPath(pen, path);
-        }
-        DrawFocusRing(g, rect, S(12));
-
-        // The switch.
-        float trackW = S(40);
-        float trackH = S(22);
-        float trackX = Width - S(18) - trackW;
-        float trackY = (Height - trackH) / 2f;
-        var trackRect = new RectangleF(trackX, trackY, trackW, trackH);
-
-        using (var path = Theme.RoundedRect(trackRect, trackH / 2f))
-        using (var brush = new SolidBrush(Theme.Lerp(Color.FromArgb(63, 69, 84), Theme.Accent, _pos)))
-        {
-            g.FillPath(brush, path);
+            g.FillRectangle(brush, area);
         }
 
-        float knob = S(16);
-        float knobX = trackX + S(3) + _pos * (trackW - knob - S(6));
-        using (var brush = new SolidBrush(Theme.Lerp(Color.FromArgb(190, 196, 208), Color.White, _pos)))
+        // The checkbox: a dark square with a blue tick.
+        float box = S(30);
+        float bx = S(20);
+        float by = (Height - box) / 2f;
+        using (var brush = new SolidBrush(Theme.Control))
         {
-            g.FillEllipse(brush, knobX, trackY + S(3), knob, knob);
+            g.FillRectangle(brush, bx, by, box, box);
+        }
+        if (_checked)
+        {
+            using var pen = new Pen(Theme.Accent, S(3.2f)) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
+            g.DrawLines(pen, new[]
+            {
+                new PointF(bx + box * 0.24f, by + box * 0.54f),
+                new PointF(bx + box * 0.43f, by + box * 0.72f),
+                new PointF(bx + box * 0.78f, by + box * 0.30f),
+            });
         }
 
-        // The text.
-        int left = (int)S(18);
-        int width = Math.Max(0, (int)(trackX - S(14)) - left);
-        TextRenderer.DrawText(g, Title, Theme.Semibold,
-            new Rectangle(left, (int)S(11), width, (int)S(22)), Theme.Text, LeftFlags);
-        TextRenderer.DrawText(g, Description, Theme.Small,
-            new Rectangle(left, (int)S(35), width, (int)S(20)), Theme.Muted, LeftFlags);
+        float textX = bx + box + S(18);
+        float textWidth = Math.Max(0, Width - textX - S(20));
+        TextPaint.Draw(g, Title, Theme.Strong, new RectangleF(textX, Height / 2f - S(24), textWidth, S(24)), Theme.Text, HAlign.Left, VAlign.Bottom);
+        TextPaint.Draw(g, Description, Theme.Small, new RectangleF(textX, Height / 2f + S(3), textWidth, S(24)), Theme.Muted, HAlign.Left, VAlign.Top);
+
+        DrawFocusRing(g, area);
     }
 }

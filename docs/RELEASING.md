@@ -32,8 +32,8 @@ tool refuses it.
    ```
 
 4. Watch the **Release** workflow in the Actions tab. It checks that the tag matches `<Version>`, runs the
-   tests, builds the single-file exe, zips it, and creates the GitHub Release with that zip attached, marked
-   Latest.
+   tests, builds the single-file exe, zips it together with `THIRD-PARTY-NOTICES.md` (the font licences), and
+   creates the GitHub Release with that zip attached, marked Latest.
 5. Open the Release, download the zip, and run the exe once on a Windows PC to confirm it starts.
 
 If the workflow fails at "Check the tag matches the version", delete the tag (`git push --delete origin v1.1.0`

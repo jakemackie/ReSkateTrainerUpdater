@@ -32,7 +32,10 @@ if ($LASTEXITCODE -ne 0) { throw 'dotnet publish failed' }
 
 $exe = Join-Path $output 'publish\ReSkateTrainerUpdater.exe'
 $zip = Join-Path $output "ReSkateTrainerUpdater-$version.zip"
-Compress-Archive -Path $exe -DestinationPath $zip
+# The font licences must travel with the exe, so the notices file goes in the zip too.
+$notices = Join-Path $repoRoot 'THIRD-PARTY-NOTICES.md'
+if (-not (Test-Path $notices)) { throw "Missing $notices" }
+Compress-Archive -Path $exe, $notices -DestinationPath $zip
 
 $exeSizeMb = [math]::Round((Get-Item $exe).Length / 1MB, 1)
 $sha256    = (Get-FileHash $zip -Algorithm SHA256).Hash

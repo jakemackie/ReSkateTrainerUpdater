@@ -11,10 +11,10 @@ This is an unofficial helper. It isn't made by, or affiliated with, the ReSkate 
 1. Download `ReSkateTrainerUpdater-<version>.zip` from the [latest release](../../releases/latest) and unzip it. The exe needs no installation.
 2. Close the game and the ReSkate launcher.
 3. Choose your ReSkate folder, the one with `ReSkateLauncher.exe`. The app remembers it for next time.
-4. If a newer Trainer is published, a banner says **Update available**. Click **Update**. For an empty folder, the banner offers **Install Tournament Edition** instead.
+4. Click the big blue tile. It says **UPDATE** when a newer Trainer is published, or **INSTALL** for an empty folder. When you're current it goes dark and says **UP TO DATE**.
 5. Start `ReSkateLauncher.exe` as usual.
 
-**Offline, or a different version:** drop a ReSkate Trainer zip onto the window (or click it to browse), then click **Install update**. A zip inside a zip, or one wrapped in a folder, is fine.
+**Offline, or a different version:** drop a ReSkate Trainer zip onto the window (or click the zip tile to browse), then click the **INSTALL** tile. A zip inside a zip, or one wrapped in a folder, is fine.
 
 Windows may show an "Unknown publisher" SmartScreen warning because the exe isn't code-signed. Choose **More info**, then **Run anyway**.
 
@@ -57,6 +57,8 @@ The ReSkate Trainer is GPL-3.0 software by its authors. The Trainer zips publish
 - Dark Pop: https://github.com/Sivaes/darkpop
 - Grab Fix: https://github.com/Sivaes/grabbugs
 
+The window is styled after the ReSkate launcher and uses the same free fonts, Montserrat and Permanent Marker. Their licences are in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md), which is also inside every release zip.
+
 ## Building from source
 
 You need Windows 10/11 and the [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0).
@@ -92,6 +94,7 @@ The exe is self-contained, so players don't need to install .NET. The result is 
 | `tools/ReSkateTrainerUpdater.ManifestTool` | The maintainer's tool that writes and verifies `latest.json` |
 | `latest.json` | The newest published Trainer for each edition, read by the app on start-up |
 | `docs` | Architecture, the online update format, and the release steps |
+| `THIRD-PARTY-NOTICES.md` | Licences for the embedded fonts |
 | `scripts` | `build-release.ps1` |
 
 ## Notes

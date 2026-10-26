@@ -36,7 +36,7 @@ GitHub redirects renamed repositories for a while, but don't rely on it.
 ```
 
 These are the real values for the 0.9.2 Tournament zip, as the manifest tool wrote them. The committed file
-starts with `"editions": {}`, which means nothing is published and no banner is shown.
+starts with `"editions": {}`, which means nothing is published and the tile stays dark.
 
 | Field | Required | Rule |
 | --- | --- | --- |
@@ -44,7 +44,7 @@ starts with `"editions": {}`, which means nothing is published and no banner is 
 | `editions` | yes | Object. Each key is an edition key: lower-case letters, digits and dashes. `tournament`, or `standard` for a Trainer with no edition name. |
 | `version` | yes | `major.minor.patch`, for example `0.9.2`. Compared as numbers, so `0.10.0` is newer than `0.9.2`. |
 | `build` | no | 5 to 40 lower-case hex characters. When present it must match the build inside the DLL. |
-| `reskateVersion` | no | `major.minor.patch`. Shown in the banner only. |
+| `reskateVersion` | no | `major.minor.patch`. Not used for any decision. |
 | `url` | yes | Must pass the accepted-URL rule above. The file name may use only letters, digits, `.`, `-` and `_`. |
 | `sizeBytes` | yes | The exact size of the zip, from 1 byte to 500 MB. |
 | `sha256` | yes | The SHA-256 of the zip, 64 hex characters. |
@@ -63,16 +63,16 @@ again every time a folder is inspected, `UpdateAdvisor.DescribeOnlineOffer` deci
 
 | The chosen folder has | `latest.json` has | The user sees |
 | --- | --- | --- |
-| No `ReSkate.dll` (empty or new folder) | `tournament` | Banner: "ReSkate Trainer 0.9.2 (Tournament) is available" and an **Install Tournament Edition** button |
-| No `ReSkate.dll` | no `tournament` | No banner |
-| Tournament 0.9.1 | `tournament` 0.9.2 | Banner: "Update available: 0.9.1 → 0.9.2 (Tournament)" and an **Update** button |
-| Tournament 0.9.2 | `tournament` 0.9.2, any build | Banner: "You're running the newest version", with a greyed-out **Up to date** button |
-| Tournament 0.9.5 | `tournament` 0.9.2 | Banner: "Your version is newer than the published one", greyed out. No downgrade is offered. |
-| Standard edition, any version | only `tournament` | No banner. Dropping a zip still works. |
-| Plain ReSkate, no Trainer | anything | No banner |
-| A `ReSkate.dll` that can't be read | anything | No banner |
-| Steam's `skate.` folder | anything | No banner. The app refuses this folder anyway. |
-| Anything | unreachable, invalid, or offline | No banner and no error. One line in the activity log. |
+| No `ReSkate.dll` (empty or new folder) | `tournament` | Green READY pill, "Ready to install", and a blue **INSTALL** tile |
+| No `ReSkate.dll` | no `tournament` | "Nothing published yet". The tile stays dark. |
+| Tournament 0.9.1 | `tournament` 0.9.2 | Blue UPDATE pill, "Update available, 0.9.1 → 0.9.2 (Tournament)", and a blue **UPDATE** tile |
+| Tournament 0.9.2 | `tournament` 0.9.2, any build | Green READY pill, "Ready to skate. You're running the newest version.", and a dark green **UP TO DATE** tile |
+| Tournament 0.9.5 | `tournament` 0.9.2 | Says your version is newer than the published one. The tile is dark. No downgrade is offered. |
+| Standard edition, any version | only `tournament` | "Trainer 0.9.1 installed. There is no online update for this edition." The tile is dark. Dropping a zip still works. |
+| Plain ReSkate, no Trainer | anything | "ReSkate without the Trainer". The tile is dark. |
+| A `ReSkate.dll` that can't be read | anything | Amber HEADS UP pill. The tile is dark. |
+| Steam's `skate.` folder | anything | Red PROBLEM pill. The app refuses this folder. |
+| Anything | unreachable, invalid, or offline | Grey OFFLINE pill, "Couldn't check for updates". No error colours, no dialog. One line in the activity log. |
 
 Clicking the button:
 
@@ -123,4 +123,4 @@ installed versions or usage data. GitHub sees the user's IP address, as with any
 - **Adding an optional field:** no schema change is needed, because older apps ignore unknown fields. Update the
   parser, `CheckEntry`, `ToJson` and the tests together.
 - **A breaking change:** raise `TrainerManifest.SupportedSchemaVersion`. Release the new app first, then push the
-  new-format manifest. Older apps will quietly show no banner until the user updates the app.
+  new-format manifest. Older apps will quietly show "Couldn't check for updates" until the user updates the app.

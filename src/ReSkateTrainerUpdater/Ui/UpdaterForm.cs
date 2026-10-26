@@ -4,36 +4,36 @@ using ReSkateTrainerUpdater.Ui.Controls;
 namespace ReSkateTrainerUpdater.Ui;
 
 /// <summary>
-/// The one window: pick the ReSkate folder, then either click the online Update/Install button in the banner,
-/// or drop a Trainer zip and press Install. Both routes end in the same InstallAsync.
-/// This class only handles the window itself. What to say, what to download and how to install lives in Core.
+/// The one window, laid out like the ReSkate launcher: a STATUS card on the left, and on the right the folder, the
+/// optional zip, and one big tile that does the work. The tile either downloads the newest Trainer from GitHub or
+/// installs a zip the user dropped. Both routes end in the same InstallAsync.
+/// This class only handles the window. What to show, what to download and how to install lives in Core.
 /// </summary>
 internal sealed class UpdaterForm : Form
 {
     private readonly UpdaterSettings _settings = UpdaterSettings.Load();
 
     private readonly HeaderBar _header = new();
-    private readonly UpdateBanner _banner = new();
-    private readonly DropZone _drop = new();
-    private readonly PathCard _pathCard = new();
-    private readonly RoundedButton _browseButton = new() { Text = "Change" };
+    private readonly StatusCard _statusCard = new();
+    private readonly CardPanel _logCard = new() { Title = "ACTIVITY LOG", Visible = false };
+    private readonly TextBox _log = new();
+    private readonly InfoTile _folderTile = new() { Glyph = TileGlyph.Folder, PathSubtitle = true };
+    private readonly InfoTile _zipTile = new() { Glyph = TileGlyph.Zip };
+    private readonly ActionTileControl _actionTile = new();
     private readonly OptionRow _backupRow = new()
     {
-        Title = "Back up replaced files",
-        Description = "Keeps a copy of your old files so you can go back.",
+        Title = "BACK UP REPLACED FILES",
+        Description = "Keeps a copy of your old files, just in case.",
     };
-    private readonly RoundedButton _installButton = new() { Text = InstallText, Primary = true };
-    private readonly ProgressStrip _progress = new();
-    private readonly StatusLine _status = new();
-    private readonly TextBox _log = new();
+    private readonly SquareButton _logButton = new() { Text = "ACTIVITY LOG", Width = 170 };
+    private readonly CaptionLabel _caption = new();
 
-    private const string InstallText = "Install update";
-
-    // The zip.
+    // The zip, whether the user chose it or it was downloaded from GitHub.
     private string? _zipPath;
     private string? _zipProblem;
     private TrainerPackage? _package;
     private bool _checkingZip;
+    private bool _zipFromOnline;
     private int _zipGeneration;
 
     // The ReSkate folder.
@@ -45,12 +45,17 @@ internal sealed class UpdaterForm : Form
     // Online updates. One HTTP client for the app's lifetime.
     private readonly HttpClient _http = TrainerDownloader.CreateClient();
     private TrainerManifest? _manifest;
+    private OnlineStatus _online = OnlineStatus.Checking;
     private OnlineOffer _offer = OnlineOffer.Nothing;
-    private RowStyle? _bannerRow;
-    private const float BannerHeight = 96f;
+
+    // What the big tile does right now, kept from the last time the screen was drawn.
+    private TileAction _tileAction = TileAction.None;
 
     // The outcome of the last install, shown until the user changes something.
     private Advice? _result;
+
+    // While something runs, this replaces the normal screen.
+    private HomeView? _busyView;
     private bool _installing;
 
     public UpdaterForm()
@@ -60,28 +65,27 @@ internal sealed class UpdaterForm : Form
         AutoScaleDimensions = new SizeF(96f, 96f);
         BackColor = Theme.Bg;
         ForeColor = Theme.Text;
-        Font = Theme.Body;
-        ClientSize = new Size(680, 850);
-        MinimumSize = new Size(640, 780);
+        Font = new Font("Segoe UI", 10f);
+        ClientSize = new Size(960, 660);
+        MinimumSize = new Size(880, 620);
         StartPosition = FormStartPosition.CenterScreen;
 
         if (AppIcon.Load() is { } icon) Icon = icon;
 
         BuildLayout();
 
+        _caption.Text = $"v{typeof(UpdaterForm).Assembly.GetName().Version?.ToString(3)}  ·  UNOFFICIAL HELPER, NOT MADE BY THE RESKATE TEAM";
+
         // Restore what the user had last time.
         _backupRow.SetCheckedImmediate(_settings.BackupReplacedFiles);
         if (!string.IsNullOrWhiteSpace(_settings.LastFolder) && Directory.Exists(_settings.LastFolder))
-        {
             _folder = _settings.LastFolder;
-            _pathCard.FolderPath = _folder;
-        }
 
-        _drop.Click += (_, _) => { if (!_installing) BrowseForZip(); };
-        _pathCard.Click += (_, _) => { if (!_installing) BrowseForFolder(); };
-        _browseButton.Click += (_, _) => { if (!_installing) BrowseForFolder(); };
-        _installButton.Click += async (_, _) => await InstallAsync();
-        _banner.ButtonClick += async (_, _) => await OnlineInstallAsync();
+        _folderTile.Click += (_, _) => { if (!_installing) BrowseForFolder(); };
+        _zipTile.Click += (_, _) => { if (!_installing) BrowseForZip(); };
+        _zipTile.ClearClick += (_, _) => { if (!_installing) ClearZipByUser(); };
+        _actionTile.Click += async (_, _) => await OnTileClickAsync();
+        _logButton.Click += (_, _) => ToggleLog();
         _backupRow.CheckedChanged += (_, _) =>
         {
             _settings.BackupReplacedFiles = _backupRow.Checked;
@@ -89,7 +93,7 @@ internal sealed class UpdaterForm : Form
         };
 
         EnableDropOn(this);
-        RefreshStatus();
+        Render();
     }
 
     protected override void OnHandleCreated(EventArgs e)
@@ -103,7 +107,7 @@ internal sealed class UpdaterForm : Form
         base.OnShown(e);
         _ = Task.Run(TrainerPackageLoader.CleanUpStaleTempFolders);
 
-        // One quiet request for latest.json. Any failure just leaves the banner hidden.
+        // One quiet request for latest.json. Any failure just leaves the screen as it would be offline.
         _ = CheckOnlineAsync();
 
         // Show which version is already installed in the folder remembered from last time.
@@ -121,34 +125,85 @@ internal sealed class UpdaterForm : Form
 
     private void BuildLayout()
     {
-        var layout = new TableLayoutPanel
+        var root = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
+            RowCount = 3,
             BackColor = Theme.Bg,
-            Padding = new Padding(26, 16, 26, 20),
+            Padding = new Padding(34, 24, 34, 26),
         };
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 92f));
+        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 54f));
 
-        // Folder row: the folder card plus a Change button.
-        var folderRow = new TableLayoutPanel
-        {
-            ColumnCount = 2,
-            RowCount = 1,
-            BackColor = Theme.Bg,
-        };
-        folderRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-        folderRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 100f));
-        folderRow.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
-        _pathCard.Dock = DockStyle.Fill;
-        _pathCard.Margin = new Padding(0, 0, 10, 0);
-        _browseButton.Dock = DockStyle.Fill;
-        _browseButton.Margin = Padding.Empty;
-        folderRow.Controls.Add(_pathCard, 0, 0);
-        folderRow.Controls.Add(_browseButton, 1, 0);
+        _header.Dock = DockStyle.Fill;
+        _header.Margin = Padding.Empty;
+        root.Controls.Add(_header, 0, 0);
 
-        // Status line (can wrap onto two lines).
-        // Activity log inside a rounded card.
+        // Body: two columns with a gap between them.
+        var body = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, BackColor = Theme.Bg, Margin = Padding.Empty };
+        body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55f));
+        body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45f));
+        body.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+
+        // Left: the status card (or the log in its place), and the backup option under it.
+        var left = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, BackColor = Theme.Bg, Margin = new Padding(0, 0, 14, 0) };
+        left.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        left.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+        left.RowStyles.Add(new RowStyle(SizeType.Absolute, 84f));
+
+        var stack = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Bg, Margin = Padding.Empty };
+        _statusCard.Dock = DockStyle.Fill;
+        BuildLogCard();
+        stack.Controls.Add(_logCard);
+        stack.Controls.Add(_statusCard);
+        left.Controls.Add(stack, 0, 0);
+
+        _backupRow.Dock = DockStyle.Fill;
+        _backupRow.Margin = new Padding(0, 14, 0, 0);
+        left.Controls.Add(_backupRow, 0, 1);
+
+        // Right: the folder, the zip, and the big tile.
+        var right = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, BackColor = Theme.Bg, Margin = new Padding(14, 0, 0, 0) };
+        right.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        right.RowStyles.Add(new RowStyle(SizeType.Absolute, 92f));
+        right.RowStyles.Add(new RowStyle(SizeType.Absolute, 106f));
+        right.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+
+        _folderTile.Dock = DockStyle.Fill;
+        _folderTile.Margin = Padding.Empty;
+        _zipTile.Dock = DockStyle.Fill;
+        _zipTile.Margin = new Padding(0, 14, 0, 0);
+        _actionTile.Dock = DockStyle.Fill;
+        _actionTile.Margin = new Padding(0, 14, 0, 0);
+        right.Controls.Add(_folderTile, 0, 0);
+        right.Controls.Add(_zipTile, 0, 1);
+        right.Controls.Add(_actionTile, 0, 2);
+
+        body.Controls.Add(left, 0, 0);
+        body.Controls.Add(right, 1, 0);
+        root.Controls.Add(body, 0, 1);
+
+        // Footer: the log button and a small caption.
+        var footer = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, BackColor = Theme.Bg, Margin = Padding.Empty };
+        footer.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 180f));
+        footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        footer.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+        _logButton.Dock = DockStyle.Fill;
+        _logButton.Margin = new Padding(0, 12, 0, 0);
+        _caption.Dock = DockStyle.Fill;
+        _caption.Margin = new Padding(0, 12, 0, 0);
+        footer.Controls.Add(_logButton, 0, 0);
+        footer.Controls.Add(_caption, 1, 0);
+        root.Controls.Add(footer, 0, 2);
+
+        Controls.Add(root);
+    }
+
+    private void BuildLogCard()
+    {
         _log.Multiline = true;
         _log.ReadOnly = true;
         _log.BorderStyle = BorderStyle.None;
@@ -159,50 +214,19 @@ internal sealed class UpdaterForm : Form
         _log.Dock = DockStyle.Fill;
         _log.TabStop = false;
         _log.HandleCreated += (_, _) => NativeMethods.UseDarkScrollbars(_log.Handle);
-        var logCard = new CardPanel();
-        logCard.Controls.Add(_log);
 
-        AddRow(layout, _header, 76);
-        _bannerRow = AddRow(layout, _banner, BannerHeight, new Padding(0, 4, 0, 6));
-        ShowBanner(false);
-        AddRow(layout, SectionLabel("UPDATE FILE (.ZIP)"), 32);
-        AddRow(layout, _drop, 118);
-        AddRow(layout, SectionLabel("YOUR RESKATE FOLDER"), 38);
-        AddRow(layout, folderRow, 114, new Padding(0, 0, 0, 14));
-        AddRow(layout, _backupRow, 70, new Padding(0, 0, 0, 8));
-        AddRow(layout, _installButton, 62, new Padding(0, 10, 0, 0));
-        AddRow(layout, _progress, 10);
-        AddRow(layout, _status, 60, new Padding(0, 4, 0, 0));
-        AddRow(layout, SectionLabel("ACTIVITY"), 32);
-        AddRow(layout, logCard, 0); // 0 = take all the remaining space
-
-        Controls.Add(layout);
+        _logCard.Dock = DockStyle.Fill;
+        _logCard.Padding = new Padding(30, 66, 16, 20);
+        _logCard.Controls.Add(_log);
     }
 
-    private static RowStyle AddRow(TableLayoutPanel table, Control control, float height, Padding? margin = null)
+    private void ToggleLog()
     {
-        var style = height > 0
-            ? new RowStyle(SizeType.Absolute, height)
-            : new RowStyle(SizeType.Percent, 100f);
-        table.RowStyles.Add(style);
-        control.Dock = DockStyle.Fill;
-        control.Margin = margin ?? Padding.Empty;
-        table.RowCount = table.RowStyles.Count;
-        table.Controls.Add(control, 0, table.RowStyles.Count - 1);
-        return style;
+        bool show = !_logCard.Visible;
+        _logCard.Visible = show;
+        _statusCard.Visible = !show;
+        _logButton.Text = show ? "BACK TO STATUS" : "ACTIVITY LOG";
     }
-
-    private static Label SectionLabel(string text) => new()
-    {
-        Text = text,
-        AutoSize = false,
-        ForeColor = Theme.Muted,
-        BackColor = Theme.Bg,
-        Font = Theme.Label,
-        TextAlign = ContentAlignment.BottomLeft,
-        Padding = new Padding(2, 0, 0, 6),
-        UseMnemonic = false,
-    };
 
     // ---------- Drag and drop ----------
 
@@ -235,7 +259,7 @@ internal sealed class UpdaterForm : Form
         if (!_installing && TryGetDroppedZip(e.Data, out _))
         {
             e.Effect = DragDropEffects.Copy;
-            _drop.Highlight = true;
+            _zipTile.SetHighlight(true);
         }
         else
         {
@@ -243,11 +267,11 @@ internal sealed class UpdaterForm : Form
         }
     }
 
-    private void OnDragLeave(object? sender, EventArgs e) => _drop.Highlight = false;
+    private void OnDragLeave(object? sender, EventArgs e) => _zipTile.SetHighlight(false);
 
     private void OnDragDrop(object? sender, DragEventArgs e)
     {
-        _drop.Highlight = false;
+        _zipTile.SetHighlight(false);
         if (_installing) return;
 
         if (TryGetDroppedZip(e.Data, out var zipPath))
@@ -257,7 +281,7 @@ internal sealed class UpdaterForm : Form
         else
         {
             _result = new Advice("That doesn't look like a .zip file. Drop the ReSkate Trainer zip you downloaded.", Severity.Warning);
-            RefreshStatus();
+            Render();
         }
     }
 
@@ -279,17 +303,35 @@ internal sealed class UpdaterForm : Form
         _package = null;
     }
 
+    // Forgets the zip, whether chosen or downloaded, so the screen goes back to the online offer.
+    private void ClearZip()
+    {
+        _zipGeneration++;
+        DisposePackage();
+        _zipPath = null;
+        _zipProblem = null;
+        _checkingZip = false;
+        _zipFromOnline = false;
+    }
+
+    private void ClearZipByUser()
+    {
+        ClearZip();
+        _result = null;
+        Render();
+    }
+
     private async Task LoadZipAsync(string path)
     {
         int generation = ++_zipGeneration;
         _zipPath = path;
         _zipProblem = null;
+        _zipFromOnline = false;
         _result = null;
         DisposePackage();
 
         _checkingZip = true;
-        _drop.SetState(DropState.Working, "Checking " + Path.GetFileName(path) + "...", "Looking inside the zip");
-        RefreshStatus();
+        Render();
 
         TrainerPackage? package = null;
         string? problem = null;
@@ -317,42 +359,7 @@ internal sealed class UpdaterForm : Form
         _checkingZip = false;
         _package = package;
         _zipProblem = problem;
-        ShowPackageInDropZone(path);
-        RefreshStatus();
-    }
-
-    private void ShowPackageInDropZone(string path, string? downloadedFrom = null)
-    {
-        var fileName = Path.GetFileName(path);
-
-        if (_package is null)
-        {
-            _drop.SetState(DropState.Problem, "Couldn't read this zip", fileName + " · click to choose another");
-            return;
-        }
-
-        if (!_package.IsValid || _package.Version is not { } version)
-        {
-            _drop.SetState(DropState.Problem, "This isn't a ReSkate Trainer update", fileName + " · click to choose another");
-            return;
-        }
-
-        var details = new List<string>();
-        string title;
-        if (version.HasTrainer)
-        {
-            title = $"ReSkate Trainer {version.TrainerVersion}";
-            if (version.Edition is not null) details.Add(version.Edition + " Edition");
-            if (version.BaseVersion is not null) details.Add("built on ReSkate " + version.BaseVersion);
-        }
-        else
-        {
-            title = $"ReSkate {version.BaseVersion}";
-            details.Add("no Trainer found in this zip");
-        }
-        details.Add(downloadedFrom ?? ByteSize.Format(_package.ZipSize));
-
-        _drop.SetState(DropState.Ready, title, string.Join(" · ", details));
+        Render();
     }
 
     // ---------- Choosing the ReSkate folder ----------
@@ -369,7 +376,6 @@ internal sealed class UpdaterForm : Form
 
         _folder = dialog.SelectedPath;
         _result = null;
-        _pathCard.FolderPath = _folder;
         _settings.LastFolder = _folder;
         _settings.Save();
         _ = InspectFolderAsync(_folder);
@@ -380,52 +386,50 @@ internal sealed class UpdaterForm : Form
         int generation = ++_folderGeneration;
         _checkingFolder = true;
         _folderInfo = null;
-        _pathCard.SetInstalled("Checking this folder...", Theme.Muted);
-        RefreshOffer();
+        Render();
 
         InstallFolderInfo? info = null;
-        string? problem = null;
         try
         {
             info = await Task.Run(() => InstallFolderInspector.Inspect(path));
         }
         catch (Exception ex)
         {
-            // Whatever went wrong, the window must leave its "checking" state and tell the user.
-            problem = ex.Message;
+            // Whatever went wrong, the window must leave its "checking" state.
+            Log("Couldn't read the folder: " + ex.Message);
         }
 
         if (generation != _folderGeneration) return;
 
         _checkingFolder = false;
         _folderInfo = info;
-
-        if (info is null)
-        {
-            _pathCard.SetInstalled("Couldn't read this folder: " + problem, Theme.Danger);
-        }
-        else
-        {
-            var (text, severity) = UpdateAdvisor.DescribeFolder(info);
-            _pathCard.SetInstalled(text, Theme.ForSeverity(severity));
-        }
-        RefreshOffer();
+        _offer = UpdateAdvisor.DescribeOnlineOffer(_manifest, _folderInfo);
+        Render();
     }
 
-    // ---------- Status ----------
+    // ---------- Drawing the screen ----------
 
     private UpdateContext CurrentContext() =>
-        new(_checkingZip, _zipPath, _zipProblem, _package, _folder, _checkingFolder, _folderInfo, _offer);
+        new(_checkingZip, _zipPath, _zipProblem, _package, _folder, _checkingFolder, _folderInfo, _offer, _online);
 
-    private void RefreshStatus()
+    // Draws everything from the current state. The decisions are made in UpdateAdvisor.
+    private void Render()
     {
-        if (_installing) return;
+        HomeView view = _busyView ?? UpdateAdvisor.DescribeHome(CurrentContext());
+        if (_busyView is null && _result is { } result) view = UpdateAdvisor.WithResult(view, result);
 
-        var advice = UpdateAdvisor.Evaluate(CurrentContext());
-        _installButton.Enabled = advice.CanInstall;
+        _statusCard.Show(view);
+        _actionTile.Show(view.Tile);
+        _tileAction = view.Tile.Action;
 
-        var shown = _result ?? advice;
-        _status.Show(shown);
+        _folderTile.Set("RESKATE FOLDER", _folder ?? "Click to choose your ReSkate folder", _folder is null ? "CHOOSE" : "CHANGE");
+        _zipTile.Set(
+            "TRAINER ZIP",
+            _zipPath is null ? "Drop a .zip here"
+                : _zipFromOnline ? "Downloaded from GitHub"
+                : Path.GetFileName(_zipPath),
+            "BROWSE",
+            clearable: _zipPath is not null && !_installing);
     }
 
     private void Log(string message) => _log.AppendText(message + "\r\n");
@@ -442,37 +446,29 @@ internal sealed class UpdaterForm : Form
         if (IsDisposed) return;
 
         _manifest = result.Manifest;
+        _online = result.Manifest is null ? OnlineStatus.Unavailable : OnlineStatus.Reachable;
         Log(UpdateAdvisor.DescribeManifestCheck(result));
         if (result.Manifest is not null)
         {
             foreach (var problem in result.Problems) Log("  " + problem);
         }
-        RefreshOffer();
+
+        _offer = UpdateAdvisor.DescribeOnlineOffer(_manifest, _folderInfo);
+        Render();
     }
 
-    // Works out what the banner offers for the current folder, then refreshes the status line.
-    private void RefreshOffer()
+    private async Task OnTileClickAsync()
     {
-        if (_checkingFolder)
+        if (_installing) return;
+        switch (_tileAction)
         {
-            // Keep the banner where it is, but not clickable, until we know what the new folder holds.
-            _banner.SetBusy(true);
+            case TileAction.DownloadAndInstall:
+                await OnlineInstallAsync();
+                break;
+            case TileAction.InstallZip:
+                await InstallAsync();
+                break;
         }
-        else if (!_installing)
-        {
-            _offer = UpdateAdvisor.DescribeOnlineOffer(_manifest, _folderInfo);
-            if (_offer.ShowBanner) _banner.SetOffer(_offer.Title, _offer.Detail, _offer.ButtonText, _offer.CanDownload);
-            ShowBanner(_offer.ShowBanner);
-            _banner.SetBusy(false);
-        }
-        RefreshStatus();
-    }
-
-    private void ShowBanner(bool show)
-    {
-        if (_bannerRow is null) return;
-        _banner.Visible = show;
-        _bannerRow.Height = show ? BannerHeight : 0f;
     }
 
     /// <summary>
@@ -483,21 +479,20 @@ internal sealed class UpdaterForm : Form
     {
         if (_installing || _checkingFolder || _offer is not { CanDownload: true, Entry: { } entry } || _folder is null) return;
 
-        string buttonText = _offer.ButtonText;
+        string what = "ReSkate Trainer " + entry.TrainerText;
         _installing = true;
         _result = null;
-        _installButton.Enabled = false;
-        _banner.SetBusy(true);
-        _banner.SetButtonText("Downloading...");
-        _progress.Active = true;
         _log.Clear();
-        Log($"Downloading ReSkate Trainer {entry.TrainerText} from {entry.Url}");
-        ShowStatus(UpdateAdvisor.DescribeDownloadProgress(entry, new DownloadProgress(0, entry.SizeBytes)));
+        Log($"Downloading {what} from {entry.Url}");
+        _busyView = UpdateAdvisor.DescribeBusy(BusyStage.Downloading, what, new DownloadProgress(0, entry.SizeBytes));
+        Render();
 
         // Progress<T> created here posts its reports back to this (UI) thread.
         var progress = new Progress<DownloadProgress>(p =>
         {
-            if (_installing) ShowStatus(UpdateAdvisor.DescribeDownloadProgress(entry, p));
+            if (!_installing || _busyView is not { Pill: "DOWNLOADING" }) return;
+            _busyView = UpdateAdvisor.DescribeBusy(BusyStage.Downloading, what, p);
+            Render();
         });
 
         TrainerPackage? package = null;
@@ -512,6 +507,8 @@ internal sealed class UpdaterForm : Form
         else
         {
             Log(download.Detail ?? "Download verified.");
+            _busyView = UpdateAdvisor.DescribeBusy(BusyStage.Unpacking, what);
+            Render();
             try
             {
                 package = await Task.Run(() => TrainerPackageLoader.Load(download.ZipPath!));
@@ -538,39 +535,39 @@ internal sealed class UpdaterForm : Form
         }
 
         _installing = false;
-        _progress.Active = false;
-        _banner.SetButtonText(buttonText);
-        _banner.SetBusy(false);
+        _busyView = null;
 
         if (package is null)
         {
             _result = failure ?? UpdateAdvisor.DescribeDownloadFailure(DownloadFailure.Network);
-            RefreshStatus();
+            Render();
             return;
         }
 
         // From here on it is the ordinary install of a checked zip, with the same confirmations, backup and rollback.
-        _zipGeneration++;
-        DisposePackage();
-        _checkingZip = false;
+        ClearZip();
         _zipPath = download.ZipPath;
-        _zipProblem = null;
         _package = package;
-        ShowPackageInDropZone(download.ZipPath!, "downloaded from GitHub");
-        RefreshStatus();
+        _zipFromOnline = true;
+        Render();
 
-        await InstallAsync(clearLog: false);
+        bool started = await InstallAsync(clearLog: false);
+        if (!started && _zipFromOnline)
+        {
+            // The user said no at a confirmation. Forget the download so the screen offers it again.
+            ClearZip();
+            Render();
+        }
     }
-
 
     // ---------- Installing ----------
 
-    /// <summary>Installs the current package. Both the Install button and the online banner end up here.</summary>
-    private async Task InstallAsync(bool clearLog = true)
+    /// <summary>Installs the current package. Returns false if it didn't start, for example when the user said no.</summary>
+    private async Task<bool> InstallAsync(bool clearLog = true)
     {
-        if (_installing) return;
-        if (!UpdateAdvisor.Evaluate(CurrentContext()).CanInstall) return;
-        if (_package is not { Version: { } incoming } package || _folder is not { } folder || _folderInfo is not { } folderInfo) return;
+        if (_installing) return false;
+        if (!UpdateAdvisor.Evaluate(CurrentContext()).CanInstall) return false;
+        if (_package is not { Version: { } incoming } package || _folder is not { } folder || _folderInfo is not { } folderInfo) return false;
 
         bool backup = _backupRow.Checked;
 
@@ -578,32 +575,30 @@ internal sealed class UpdaterForm : Form
         if (UpdateAdvisor.IsDowngrade(folderInfo.Installed, incoming) &&
             !Confirm($"This zip ({incoming.TrainerText}) is older than the version you have ({folderInfo.Installed!.TrainerText}).\r\n\r\nInstall the older version anyway?"))
         {
-            return;
+            return false;
         }
 
         if (!folderInfo.HasLauncher && !folderInfo.IsEmpty &&
             !Confirm($"There's no ReSkate in this folder (no {ReSkateFiles.Launcher}) and it isn't empty.\r\n\r\nInstall ReSkate Trainer into it anyway?"))
         {
-            return;
+            return false;
         }
 
         if (!backup &&
             !Confirm("Backups are turned off, so your old files can't be restored afterwards.\r\n\r\nContinue?"))
         {
-            return;
+            return false;
         }
 
         _installing = true;
         _result = null;
-        _installButton.Enabled = false;
-        _installButton.Text = "Installing...";
-        _banner.SetBusy(true);
-        _progress.Active = true;
         if (clearLog) _log.Clear();
-        ShowStatus(new Advice("Installing... please don't close the app.", Severity.Working));
+        _busyView = UpdateAdvisor.DescribeBusy(BusyStage.Installing, incoming.DisplayName);
+        Render();
         Log($"Installing {incoming.DisplayName} into {folder}");
         foreach (var note in package.Notes) Log(note);
 
+        bool finished = false;
         try
         {
             // Progress<T> created here posts its reports back to this (UI) thread.
@@ -613,6 +608,7 @@ internal sealed class UpdaterForm : Form
             Log("");
             LogResult(result);
             _result = UpdateAdvisor.DescribeResult(result, incoming);
+            finished = result.Outcome is InstallOutcome.Installed or InstallOutcome.AlreadyUpToDate;
         }
         catch (Exception ex)
         {
@@ -623,18 +619,14 @@ internal sealed class UpdaterForm : Form
         finally
         {
             _installing = false;
-            _progress.Active = false;
-            _installButton.Text = InstallText;
-            _banner.SetBusy(false);
+            _busyView = null;
         }
 
-        RefreshStatus();
+        // A finished install is done with its zip: clear it so the screen shows what is installed, not a second Install.
+        if (finished) ClearZip();
+        Render();
         _ = InspectFolderAsync(folder); // show the version that is installed now
-    }
-
-    private void ShowStatus(Advice advice)
-    {
-        _status.Show(advice);
+        return true;
     }
 
     private void LogResult(InstallResult result)

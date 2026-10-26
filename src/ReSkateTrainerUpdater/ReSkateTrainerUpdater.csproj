@@ -16,6 +16,11 @@
   <ItemGroup>
     <!-- Also embedded, so the window and header can show the same icon. LogicalName must match AppIcon. -->
     <EmbeddedResource Include="Assets\ReSkateTrainerUpdater.ico" LogicalName="app.ico" />
+
+    <!-- The same fonts the ReSkate launcher uses. Licences are in THIRD-PARTY-NOTICES.md. LogicalNames must match GameFonts. -->
+    <EmbeddedResource Include="Assets\Fonts\PermanentMarker-Regular.ttf" LogicalName="font.permanentmarker" />
+    <EmbeddedResource Include="Assets\Fonts\Montserrat-ExtraBold.ttf" LogicalName="font.montserrat-extrabold" />
+    <EmbeddedResource Include="Assets\Fonts\Montserrat-SemiBold.ttf" LogicalName="font.montserrat-semibold" />
   </ItemGroup>
 
   <ItemGroup>

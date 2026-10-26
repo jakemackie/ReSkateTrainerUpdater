@@ -9,7 +9,7 @@ public static class UpdateAdvisor
     public static Advice Evaluate(UpdateContext context)
     {
         if (context.CheckingZip) return new Advice("Checking the zip...", Severity.Working);
-        if (context.ZipPath is null) return DescribeNoZip(context.Offer);
+        if (context.ZipPath is null) return new Advice("Drop the ReSkate Trainer zip to get started.", Severity.Neutral);
         if (context.Package is null) return new Advice(context.ZipProblem ?? "Couldn't read that zip.", Severity.Error);
         if (!context.Package.IsValid) return new Advice(context.Package.Errors[0], Severity.Error);
         if (context.Package.Version is not { } incoming) return new Advice("Couldn't read the version in that zip.", Severity.Error);
@@ -101,30 +101,10 @@ public static class UpdateAdvisor
         return ("No ReSkate found in this folder yet.", Severity.Warning);
     }
 
-    /// <summary>The word shown in the coloured pill beside a message of this severity.</summary>
-    public static string PillLabel(Severity severity) => severity switch
-    {
-        Severity.Working => "Working",
-        Severity.Good => "All good",
-        Severity.Warning => "Heads up",
-        Severity.Error => "Problem",
-        _ => "Info",
-    };
-
-    // The status line before any zip is chosen. The online banner, when shown, is the quicker route.
-    private static Advice DescribeNoZip(OnlineOffer? offer) => offer?.Kind switch
-    {
-        OfferKind.Update or OfferKind.FreshInstall =>
-            new Advice($"Click {offer.ButtonText} above to download it from GitHub, or drop a zip instead.", Severity.Neutral),
-        OfferKind.UpToDate =>
-            new Advice("You have the newest published version. Drop a zip only if you want a different one.", Severity.Neutral),
-        _ => new Advice("Drop the ReSkate Trainer zip to get started.", Severity.Neutral),
-    };
-
     // ---------- Online updates ----------
 
     /// <summary>
-    /// What the online banner offers for this folder. Only offers what latest.json lists:
+    /// What the online check offers for this folder. Only offers what latest.json lists:
     /// an empty or new folder gets the fresh-install edition (Tournament), and an installed Trainer is only
     /// offered a newer version of its own edition. Plain ReSkate, an unreadable ReSkate.dll, and editions the
     /// manifest doesn't list get nothing, and the drop zone works as before.
@@ -136,51 +116,215 @@ public static class UpdateAdvisor
 
         if (!folder.HasRuntime)
         {
-            if (manifest.Find(OnlineSource.FreshInstallEdition) is not { } fresh) return OnlineOffer.Nothing;
-            return new OnlineOffer(
-                OfferKind.FreshInstall,
-                fresh,
-                $"{fresh.EditionName} {fresh.Version} is available",
-                DetailFor(fresh),
-                $"Install {fresh.EditionName} Edition");
+            return manifest.Find(OnlineSource.FreshInstallEdition) is { } fresh
+                ? new OnlineOffer(OfferKind.FreshInstall, fresh)
+                : OnlineOffer.Nothing;
         }
 
         // ReSkate.dll is there but couldn't be read, or it is plain ReSkate: don't guess.
         if (folder.Installed is not { HasTrainer: true } installed) return OnlineOffer.Nothing;
-
         if (manifest.Find(OnlineSource.EditionKey(installed.Edition)) is not { } latest) return OnlineOffer.Nothing;
 
-        if (VersionCompare.Compare(installed.TrainerVersion, latest.Version) < 0)
-        {
-            return new OnlineOffer(
-                OfferKind.Update,
-                latest,
-                $"Update available: {installed.TrainerVersion} → {latest.TrainerText}",
-                DetailFor(latest),
-                "Update");
-        }
-
-        // Nothing to download. Say so, rather than hiding the banner, so the user gets a confirmation.
-        bool newerThanPublished = VersionCompare.Compare(installed.TrainerVersion, latest.Version) > 0;
         return new OnlineOffer(
-            OfferKind.UpToDate,
-            latest,
-            newerThanPublished
-                ? "Your version is newer than the published one"
-                : "You're running the newest version",
-            newerThanPublished
-                ? $"You have {installed.TrainerVersion}. The newest published is {latest.TrainerText}."
-                : $"ReSkate Trainer {installed.TrainerText} is the latest published.",
-            "Up to date");
+            VersionCompare.Compare(installed.TrainerVersion, latest.Version) < 0 ? OfferKind.Update : OfferKind.UpToDate,
+            latest);
     }
 
-    private static string DetailFor(ManifestEntry entry)
+    // ---------- The main window ----------
+
+    private static ActionTile Idle(string title, string subtitle) =>
+        new(title, subtitle, TileStyle.Muted, TileAction.None);
+
+    private static HomeView Home(string pill, Severity severity, string headline, string subline, ActionTile tile,
+        params StatusRow[] rows) => new(pill, severity, headline, subline, rows, tile);
+
+    /// <summary>
+    /// Works out everything the main window shows: the status card, its pill and rows, and the big action tile.
+    /// The window draws this and does nothing else, so every case here is tested.
+    /// </summary>
+    public static HomeView DescribeHome(UpdateContext context)
     {
-        var parts = new List<string>();
-        if (entry.ReSkateVersion is not null) parts.Add("ReSkate " + entry.ReSkateVersion);
-        parts.Add(ByteSize.Format(entry.SizeBytes));
-        parts.Add("verified before install");
-        return string.Join(" · ", parts);
+        if (context.CheckingZip)
+        {
+            return Home("CHECKING", Severity.Working, "Checking your zip...", Path.GetFileName(context.ZipPath ?? ""),
+                Idle("INSTALL", "One moment"));
+        }
+
+        return context.ZipPath is null ? DescribeOnlineHome(context) : DescribeZipHome(context);
+    }
+
+    // A zip the user chose. It takes over from the online offer until it is cleared.
+    private static HomeView DescribeZipHome(UpdateContext c)
+    {
+        var advice = Evaluate(c);
+
+        if (c.Package is not { IsValid: true, Version: { } incoming })
+        {
+            return Home("PROBLEM", Severity.Error,
+                c.Package is null ? "Couldn't read that zip" : "That isn't a Trainer update",
+                advice.Message, Idle("INSTALL", "Choose another zip"));
+        }
+
+        var rows = new List<StatusRow>();
+        if (!c.CheckingFolder && c.FolderInfo is { Exists: true, IsSteamSkateFolder: false } folder)
+        {
+            var (text, severity) = DescribeFolder(folder);
+            rows.Add(new StatusRow(text, severity));
+        }
+
+        string zipName = incoming.HasTrainer ? "Trainer " + incoming.TrainerText : "ReSkate " + incoming.BaseVersion;
+        rows.Add(new StatusRow($"Zip: {zipName}" + (incoming.HasTrainer && incoming.BaseVersion is not null ? $" · ReSkate {incoming.BaseVersion}" : ""),
+            Severity.Highlight));
+
+        var (pill, pillSeverity) = advice.Severity switch
+        {
+            Severity.Good => ("READY", Severity.Good),
+            Severity.Warning => ("HEADS UP", Severity.Warning),
+            Severity.Error => ("PROBLEM", Severity.Error),
+            Severity.Working => ("CHECKING", Severity.Working),
+            _ => (advice.CanInstall ? "READY" : "NEXT", Severity.Neutral),
+        };
+
+        var tile = advice.CanInstall
+            ? new ActionTile("INSTALL", IsDowngrade(c.FolderInfo?.Installed, incoming) ? "Older than yours" : "From your zip",
+                TileStyle.Primary, TileAction.InstallZip)
+            : Idle("INSTALL", c.Folder is null ? "Choose a folder first" : advice.Severity == Severity.Working ? "One moment" : "See the note");
+
+        // When something is wrong, say so in the headline instead of repeating the zip's name.
+        return new HomeView(pill, pillSeverity, pillSeverity == Severity.Error ? "Can't install yet" : zipName, advice.Message, rows, tile);
+    }
+
+    // No zip chosen: show what the online check found for this folder.
+    private static HomeView DescribeOnlineHome(UpdateContext c)
+    {
+        if (c.Folder is null)
+        {
+            return Home("SET UP", Severity.Neutral, "Choose your folder",
+                "Pick the folder with ReSkateLauncher.exe, or an empty folder for a fresh install.",
+                Idle("INSTALL", "Choose a folder first"));
+        }
+        if (c.CheckingFolder)
+            return Home("CHECKING", Severity.Working, "Checking your folder...", "", Idle("INSTALL", "One moment"));
+        if (c.FolderInfo is not { } folder)
+        {
+            return Home("PROBLEM", Severity.Error, "Couldn't read that folder", "Choose it again.",
+                Idle("INSTALL", "Choose a folder first"));
+        }
+        if (!folder.Exists)
+        {
+            return Home("PROBLEM", Severity.Error, "Folder not found",
+                "That folder doesn't exist any more. Choose it again.", Idle("INSTALL", "Choose a folder first"));
+        }
+        if (folder.IsSteamSkateFolder)
+        {
+            return Home("PROBLEM", Severity.Error, "Not this folder",
+                "ReSkate can't run from Steam's skate. folder. Choose a folder of its own, for example C:\\Games\\ReSkate.",
+                Idle("INSTALL", "Choose another folder"));
+        }
+
+        var (folderText, folderSeverity) = DescribeFolder(folder);
+        var folderRow = new StatusRow(folderText, folderSeverity);
+
+        if (c.Online == OnlineStatus.Checking)
+        {
+            return Home("CHECKING", Severity.Working, "Checking for updates...",
+                "Looking on GitHub for the newest Trainer.", Idle("INSTALL", "One moment"), folderRow);
+        }
+
+        var offer = c.Offer ?? OnlineOffer.Nothing;
+        var entry = offer.Entry;
+        var installed = folder.Installed;
+
+        switch (offer.Kind)
+        {
+            case OfferKind.FreshInstall when entry is not null:
+                return Home("READY", Severity.Good, "Ready to install",
+                    $"{entry.EditionName} Edition {entry.Version} is on GitHub.",
+                    new ActionTile("INSTALL", $"{entry.EditionName} {entry.Version}", TileStyle.Primary, TileAction.DownloadAndInstall),
+                    folderRow, LatestRow(entry, Severity.Highlight));
+
+            case OfferKind.Update when entry is not null && installed is not null:
+                return Home("UPDATE", Severity.Highlight, "Update available",
+                    $"{installed.TrainerVersion} → {entry.TrainerText}",
+                    new ActionTile("UPDATE", $"{installed.TrainerVersion} → {entry.Version}", TileStyle.Primary, TileAction.DownloadAndInstall),
+                    folderRow, LatestRow(entry, Severity.Highlight));
+
+            case OfferKind.UpToDate when entry is not null && installed is not null:
+                bool ahead = VersionCompare.Compare(installed.TrainerVersion, entry.Version) > 0;
+                return Home("READY", Severity.Good, "Ready to skate",
+                    ahead
+                        ? $"You have {installed.TrainerVersion}. The newest published is {entry.TrainerText}."
+                        : "You're running the newest version.",
+                    new ActionTile("UP TO DATE", "Nothing to install", TileStyle.Success, TileAction.None),
+                    folderRow, LatestRow(entry, Severity.Good));
+        }
+
+        // Nothing to offer. Say why, so the screen is never a mystery.
+        bool offline = c.Online == OnlineStatus.Unavailable;
+        if (!folder.HasRuntime)
+        {
+            return Home("SET UP", Severity.Neutral,
+                offline ? "Can't check GitHub" : "Nothing published yet",
+                offline
+                    ? "Couldn't reach GitHub. Drop a Trainer zip to install instead."
+                    : "No Trainer is published online yet. Drop a Trainer zip to install instead.",
+                Idle("INSTALL", "Use a zip"), folderRow);
+        }
+        if (installed is null)
+        {
+            return Home("HEADS UP", Severity.Warning, "Couldn't read ReSkate.dll",
+                "The file is there but couldn't be read. Drop a Trainer zip to replace it.",
+                Idle("INSTALL", "Use a zip"), folderRow);
+        }
+        if (!installed.HasTrainer)
+        {
+            return Home("READY", Severity.Neutral, "ReSkate without the Trainer",
+                "Drop a Trainer zip to add the Trainer to this ReSkate.", Idle("INSTALL", "Use a zip"), folderRow);
+        }
+        return Home(offline ? "OFFLINE" : "READY", Severity.Neutral,
+            offline ? "Couldn't check for updates" : $"Trainer {installed.TrainerText} installed",
+            offline
+                ? "Couldn't reach GitHub. You can still drop a Trainer zip."
+                : "There is no online update for this edition. You can still drop a Trainer zip.",
+            Idle("NO UPDATE", "Use a zip"), folderRow);
+    }
+
+    private static StatusRow LatestRow(ManifestEntry entry, Severity severity) =>
+        new($"Latest: {entry.TrainerText} · {ByteSize.Format(entry.SizeBytes)}", severity);
+
+    /// <summary>The screen while something is running. <paramref name="what"/> names it, for example "ReSkate Trainer 0.9.2 (Tournament)".</summary>
+    public static HomeView DescribeBusy(BusyStage stage, string what, DownloadProgress? progress = null)
+    {
+        switch (stage)
+        {
+            case BusyStage.Downloading:
+                double? fraction = progress is { Total: > 0 } p ? Math.Clamp((double)p.Received / p.Total, 0, 1) : 0;
+                string sizes = progress is { Total: > 0 } q ? $"{ByteSize.Format(q.Received)} of {ByteSize.Format(q.Total)}" : "Starting...";
+                return Home("DOWNLOADING", Severity.Working, "Downloading...", what,
+                    new ActionTile("DOWNLOADING", sizes, TileStyle.Primary, TileAction.None, fraction, Working: true),
+                    new StatusRow("From GitHub, verified before install", Severity.Working));
+
+            case BusyStage.Unpacking:
+                return Home("VERIFYING", Severity.Working, "Checking the download...", what,
+                    new ActionTile("VERIFYING", "Almost there", TileStyle.Primary, TileAction.None, Working: true));
+
+            default:
+                return Home("INSTALLING", Severity.Working, "Installing...", "Please don't close the app.",
+                    new ActionTile("INSTALLING", what, TileStyle.Primary, TileAction.None, Working: true));
+        }
+    }
+
+    /// <summary>Puts the outcome of an install or download on the status card, keeping its rows and tile.</summary>
+    public static HomeView WithResult(HomeView view, Advice result)
+    {
+        var (pill, headline) = result.Severity switch
+        {
+            Severity.Good => ("DONE", "All set"),
+            Severity.Warning => ("HEADS UP", "Nothing changed"),
+            Severity.Error => ("PROBLEM", "Something went wrong"),
+            _ => ("INFO", "Note"),
+        };
+        return view with { Pill = pill, Severity = result.Severity, Headline = headline, Subline = result.Message };
     }
 
     /// <summary>The activity-log line after the start-up check of latest.json.</summary>
@@ -197,11 +341,6 @@ public static class UpdateAdvisor
         var latest = string.Join(", ", result.Manifest.Editions.Values.Select(e => $"{e.EditionName} {e.Version}"));
         return $"Online check: newest published Trainer is {latest}.";
     }
-
-    /// <summary>The status line while a zip downloads.</summary>
-    public static Advice DescribeDownloadProgress(ManifestEntry entry, DownloadProgress progress) =>
-        new($"Downloading ReSkate Trainer {entry.TrainerText}... {ByteSize.Format(progress.Received)} of {ByteSize.Format(progress.Total)}",
-            Severity.Working);
 
     /// <summary>The message when a download fails. Every case says nothing was changed, because nothing was.</summary>
     public static Advice DescribeDownloadFailure(DownloadFailure failure) => failure switch

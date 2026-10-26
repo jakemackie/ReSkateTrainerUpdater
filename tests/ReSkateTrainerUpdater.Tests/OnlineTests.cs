@@ -171,30 +171,19 @@ internal static class OnlineTests
 
         var fresh = UpdateAdvisor.DescribeOnlineOffer(manifest, Folder(null, hasRuntime: false));
         Check("An empty folder is offered the Tournament Edition",
-            fresh is { Kind: OfferKind.FreshInstall, CanDownload: true, ButtonText: "Install Tournament Edition" } && fresh.Title == "Tournament 0.9.2 is available",
-            fresh.Title);
-        Check("The offer names the ReSkate version, the size and that it is verified", fresh.Detail == "ReSkate 2.1.1 · 1000 B · verified before install", fresh.Detail);
+            fresh is { Kind: OfferKind.FreshInstall, CanDownload: true, Entry.Version: "0.9.2", Entry.Edition: "tournament" });
         Check("An empty folder gets nothing if Tournament isn't published",
             UpdateAdvisor.DescribeOnlineOffer(new TrainerManifest().With(Entry(edition: "big-air")), Folder(null, hasRuntime: false)).Kind == OfferKind.None);
 
         var update = UpdateAdvisor.DescribeOnlineOffer(manifest, Folder(Tournament("0.9.1")));
-        Check("An older Tournament gets an update offer",
-            update is { Kind: OfferKind.Update, CanDownload: true, ButtonText: "Update" } && update.Title == "Update available: 0.9.1 → 0.9.2 (Tournament)",
-            update.Title);
+        Check("An older Tournament gets an update offer", update is { Kind: OfferKind.Update, CanDownload: true });
         Check("Versions compare as numbers, not text",
             UpdateAdvisor.DescribeOnlineOffer(new TrainerManifest().With(Entry(version: "0.10.0")), Folder(Tournament("0.9.2"))).Kind == OfferKind.Update);
 
-        var same = UpdateAdvisor.DescribeOnlineOffer(manifest, Folder(Tournament("0.9.2")));
-        Check("The newest Tournament shows a greyed-out banner, not nothing",
-            same is { Kind: OfferKind.UpToDate, CanDownload: false, ShowBanner: true, ButtonText: "Up to date" });
-        Check("The up-to-date banner confirms it in words",
-            same.Title == "You're running the newest version" && same.Detail.Contains("0.9.2 (Tournament)") && same.Detail.Contains("latest published"), same.Title + " / " + same.Detail);
-        var ahead = UpdateAdvisor.DescribeOnlineOffer(manifest, Folder(Tournament("0.9.5")));
+        Check("The newest Tournament is up to date, with nothing to download",
+            UpdateAdvisor.DescribeOnlineOffer(manifest, Folder(Tournament("0.9.2"))) is { Kind: OfferKind.UpToDate, CanDownload: false });
         Check("A newer local Tournament is not offered a downgrade",
-            ahead is { Kind: OfferKind.UpToDate, CanDownload: false, ShowBanner: true });
-        Check("A newer local Tournament says so", ahead.Title.Contains("newer") && ahead.Detail.Contains("0.9.5"), ahead.Title + " / " + ahead.Detail);
-        Check("Only the offers with nothing to say hide the banner",
-            !OnlineOffer.Nothing.ShowBanner && update.ShowBanner && fresh.ShowBanner);
+            UpdateAdvisor.DescribeOnlineOffer(manifest, Folder(Tournament("0.9.5"))) is { Kind: OfferKind.UpToDate, CanDownload: false });
 
         var standard = new ReSkateVersion("2.1.1", "ReSkate", "0.9.1", "aaaaaaa", null);
         Check("The standard edition gets no Tournament offer", UpdateAdvisor.DescribeOnlineOffer(manifest, Folder(standard)).Kind == OfferKind.None);
@@ -204,25 +193,137 @@ internal static class OnlineTests
         Check("Steam's skate. folder gets no offer",
             UpdateAdvisor.DescribeOnlineOffer(manifest, Folder(null, hasRuntime: false, steam: true)).Kind == OfferKind.None);
 
-        var status = UpdateAdvisor.Evaluate(new UpdateContext(false, null, null, null, @"C:\Games\ReSkate", false, Folder(Tournament("0.9.1")), update));
-        Check("With an offer and no zip, the status points at the button", status.Message.Contains("Click Update above") && !status.CanInstall, status.Message);
-
         Section("Online messages");
         Check("A failed check is logged quietly",
             UpdateAdvisor.DescribeManifestCheck(new ManifestReadResult(null, new[] { "no internet" })).Contains("Dropping a zip still works"));
         Check("A successful check names the newest version",
             UpdateAdvisor.DescribeManifestCheck(new ManifestReadResult(manifest, Array.Empty<string>())).Contains("Tournament 0.9.2"));
-        Check("Download progress shows sizes",
-            UpdateAdvisor.DescribeDownloadProgress(Entry(), new DownloadProgress(512 * 1024, 2 * 1024 * 1024)).Message.Contains("of 2 MB"));
         var everyFailure = Enum.GetValues<DownloadFailure>().Where(f => f != DownloadFailure.None).Select(UpdateAdvisor.DescribeDownloadFailure).ToList();
         Check("Every download failure says nothing was changed", everyFailure.All(a => a.Message.Contains("Nothing was changed")));
         Check("A hash mismatch is an error", UpdateAdvisor.DescribeDownloadFailure(DownloadFailure.HashMismatch).Severity == Severity.Error);
 
-        Section("Pill labels");
-        var labels = Enum.GetValues<Severity>().Select(UpdateAdvisor.PillLabel).ToList();
-        Check("Every severity has its own short pill label", labels.Distinct().Count() == labels.Count && labels.All(l => l.Length is > 0 and <= 10), string.Join(", ", labels));
-        Check("Good, warning and error read plainly",
-            UpdateAdvisor.PillLabel(Severity.Good) == "All good" && UpdateAdvisor.PillLabel(Severity.Warning) == "Heads up" && UpdateAdvisor.PillLabel(Severity.Error) == "Problem");
+        MainWindow(workspace);
+    }
+
+    // ---------- What the main window shows ----------
+
+    private static void MainWindow(Workspace workspace)
+    {
+        Section("Main window");
+
+        var manifest = new TrainerManifest().With(Entry());
+        var views = new List<HomeView>();
+
+        InstallFolderInfo Folder(ReSkateVersion? installed, bool hasRuntime = true, bool steam = false, bool exists = true) =>
+            new(@"C:\Games\ReSkate", exists, IsEmpty: !hasRuntime, HasLauncher: hasRuntime, HasRuntime: hasRuntime, installed, steam, false);
+        ReSkateVersion Tournament(string version) => new("2.1.1", "ReSkate", version, "aaaaaaa", "Tournament");
+
+        // Builds the view for a folder exactly as the window does: the offer comes from the manifest.
+        HomeView View(InstallFolderInfo? folder, OnlineStatus online = OnlineStatus.Reachable, string? chosen = @"C:\Games\ReSkate",
+            bool checkingFolder = false, TrainerManifest? m = null)
+        {
+            var offer = online == OnlineStatus.Reachable ? UpdateAdvisor.DescribeOnlineOffer(m ?? manifest, folder) : OnlineOffer.Nothing;
+            var view = UpdateAdvisor.DescribeHome(new UpdateContext(false, null, null, null, chosen, checkingFolder, folder, offer, online));
+            views.Add(view);
+            return view;
+        }
+
+        var none = View(null, chosen: null);
+        Check("With no folder it asks for one", none is { Pill: "SET UP", Tile.Enabled: false } && none.Headline.Contains("folder"), none.Headline);
+        Check("While checking the folder it says so", View(null, checkingFolder: true).Pill == "CHECKING");
+        Check("A folder that vanished is a problem", View(Folder(null, hasRuntime: false, exists: false)) is { Pill: "PROBLEM", Severity: Severity.Error, Tile.Enabled: false });
+        Check("Steam's skate. folder is a problem", View(Folder(null, hasRuntime: false, steam: true)) is { Pill: "PROBLEM", Tile.Enabled: false });
+        Check("While GitHub is being checked it says so and waits",
+            View(Folder(Tournament("0.9.1")), OnlineStatus.Checking) is { Pill: "CHECKING", Tile.Enabled: false });
+
+        var fresh = View(Folder(null, hasRuntime: false));
+        Check("An empty folder shows a blue Install tile that downloads",
+            fresh is { Pill: "READY", Severity: Severity.Good, Tile: { Title: "INSTALL", Style: TileStyle.Primary, Action: TileAction.DownloadAndInstall, Enabled: true } }, fresh.Tile.Title);
+        Check("It names the edition and version", fresh.Tile.Subtitle == "Tournament 0.9.2" && fresh.Subline.Contains("Tournament Edition 0.9.2"), fresh.Subline);
+        Check("It lists the folder and the latest version", fresh.Rows.Count == 2 && fresh.Rows[1].Text == "Latest: 0.9.2 (Tournament) · 1000 B", string.Join(" | ", fresh.Rows.Select(r => r.Text)));
+
+        var update = View(Folder(Tournament("0.9.1")));
+        Check("An older Tournament shows an UPDATE pill and tile",
+            update is { Pill: "UPDATE", Severity: Severity.Highlight, Headline: "Update available", Tile: { Title: "UPDATE", Action: TileAction.DownloadAndInstall, Style: TileStyle.Primary } });
+        Check("The update says from and to", update.Subline == "0.9.1 → 0.9.2 (Tournament)" && update.Tile.Subtitle == "0.9.1 → 0.9.2", update.Subline + " / " + update.Tile.Subtitle);
+        Check("The update lists what is installed", update.Rows[0].Text.Contains("Installed: Trainer 0.9.1 (Tournament)"), update.Rows[0].Text);
+
+        var current = View(Folder(Tournament("0.9.2")));
+        Check("The newest version shows a ready screen with a greyed-out tile",
+            current is { Pill: "READY", Severity: Severity.Good, Headline: "Ready to skate", Tile: { Title: "UP TO DATE", Style: TileStyle.Success, Action: TileAction.None, Enabled: false } });
+        Check("It confirms in words", current.Subline == "You're running the newest version.", current.Subline);
+        var ahead = View(Folder(Tournament("0.9.5")));
+        Check("A newer local version says so and offers nothing", ahead.Subline.Contains("0.9.5") && ahead.Subline.Contains("0.9.2 (Tournament)") && !ahead.Tile.Enabled, ahead.Subline);
+
+        var offlineInstalled = View(Folder(Tournament("0.9.2")), OnlineStatus.Unavailable);
+        Check("Offline with a Trainer says so and stays calm",
+            offlineInstalled is { Pill: "OFFLINE", Severity: Severity.Neutral, Tile: { Title: "NO UPDATE", Enabled: false } } && offlineInstalled.Subline.Contains("drop a Trainer zip"), offlineInstalled.Subline);
+        var offlineEmpty = View(Folder(null, hasRuntime: false), OnlineStatus.Unavailable);
+        Check("Offline with an empty folder points at the zip", offlineEmpty.Headline == "Can't check GitHub" && !offlineEmpty.Tile.Enabled, offlineEmpty.Headline);
+        Check("Nothing published yet says so",
+            View(Folder(null, hasRuntime: false), m: new TrainerManifest()).Headline == "Nothing published yet");
+        Check("The standard edition is told there's no online update for it",
+            View(Folder(new ReSkateVersion("2.1.1", "ReSkate", "0.9.1", "aaaaaaa", null))) is { Headline: "Trainer 0.9.1 installed", Tile.Enabled: false });
+        Check("Plain ReSkate is told to use a zip",
+            View(Folder(new ReSkateVersion("2.1.1", "ReSkate", null, null, null))).Headline == "ReSkate without the Trainer");
+        Check("An unreadable ReSkate.dll is a warning", View(Folder(null, hasRuntime: true)) is { Pill: "HEADS UP", Severity: Severity.Warning });
+
+        // A chosen zip takes over from the online offer.
+        var zip = workspace.NewZip("home", f => FakeBinary.WriteRelease(f));
+        using var package = TrainerPackageLoader.Load(zip);
+        HomeView ZipView(InstallFolderInfo? folder, bool checkingZip = false)
+        {
+            var offer = UpdateAdvisor.DescribeOnlineOffer(manifest, folder);
+            var view = UpdateAdvisor.DescribeHome(new UpdateContext(checkingZip, zip, null, package, @"C:\Games\ReSkate", false, folder, offer, OnlineStatus.Reachable));
+            views.Add(view);
+            return view;
+        }
+
+        var fromZip = ZipView(Folder(Tournament("0.9.1")));
+        Check("A chosen zip installs from the zip, not from GitHub",
+            fromZip is { Tile: { Title: "INSTALL", Subtitle: "From your zip", Action: TileAction.InstallZip, Enabled: true } }, fromZip.Tile.Action.ToString());
+        Check("It names the zip's version", fromZip.Headline == "Trainer 0.9.2 (Tournament)" && fromZip.Rows.Any(r => r.Text.StartsWith("Zip: Trainer 0.9.2 (Tournament)")), fromZip.Headline);
+        var downgrade = ZipView(Folder(Tournament("0.9.5")));
+        Check("A downgrade is allowed but called out", downgrade is { Pill: "HEADS UP", Tile: { Subtitle: "Older than yours", Enabled: true } });
+        Check("While the zip is checked it says so", ZipView(null, checkingZip: true).Pill == "CHECKING");
+        var missingFolder = ZipView(Folder(null, hasRuntime: false, exists: false));
+        Check("A zip with a missing folder says it can't install yet and why",
+            missingFolder is { Pill: "PROBLEM", Headline: "Can't install yet", Tile.Enabled: false } && missingFolder.Subline.Contains("doesn't exist"), missingFolder.Subline);
+
+        var badZip = workspace.NewZip("home_bad", f => File.WriteAllText(Path.Combine(f, "notes.txt"), "not a trainer"));
+        using var badPackage = TrainerPackageLoader.Load(badZip);
+        var bad = UpdateAdvisor.DescribeHome(new UpdateContext(false, badZip, null, badPackage, @"C:\Games\ReSkate", false, Folder(null, hasRuntime: false)));
+        views.Add(bad);
+        Check("A zip that isn't a Trainer is a problem", bad is { Pill: "PROBLEM", Headline: "That isn't a Trainer update", Tile.Enabled: false }, bad.Headline);
+        var unreadable = UpdateAdvisor.DescribeHome(new UpdateContext(false, badZip, "It's damaged.", null, null, false, null));
+        views.Add(unreadable);
+        Check("A zip that couldn't be opened shows why", unreadable is { Pill: "PROBLEM", Headline: "Couldn't read that zip", Subline: "It's damaged." });
+
+        Section("Busy and results");
+        var entry = Entry();
+        var downloading = UpdateAdvisor.DescribeBusy(BusyStage.Downloading, "ReSkate Trainer 0.9.2 (Tournament)", new DownloadProgress(512 * 1024, 2 * 1024 * 1024));
+        views.Add(downloading);
+        Check("Downloading fills the tile as a progress bar",
+            downloading is { Pill: "DOWNLOADING", Tile: { Progress: 0.25, Working: true, Enabled: false } } && downloading.Tile.Subtitle == "512 KB of 2 MB", downloading.Tile.Subtitle);
+        Check("Downloading before any bytes arrive shows an empty bar",
+            UpdateAdvisor.DescribeBusy(BusyStage.Downloading, "x").Tile is { Progress: 0, Working: true });
+        var unpacking = UpdateAdvisor.DescribeBusy(BusyStage.Unpacking, "x");
+        var installing = UpdateAdvisor.DescribeBusy(BusyStage.Installing, "x");
+        views.Add(unpacking);
+        views.Add(installing);
+        Check("Checking and installing show activity with no fixed progress",
+            unpacking is { Pill: "VERIFYING", Tile: { Working: true, Progress: null } } && installing is { Pill: "INSTALLING", Tile: { Working: true, Progress: null }, Subline: "Please don't close the app." });
+
+        var done = UpdateAdvisor.WithResult(current, new Advice("Installed it.", Severity.Good));
+        Check("A good result shows DONE and keeps the rest", done is { Pill: "DONE", Headline: "All set", Subline: "Installed it.", Severity: Severity.Good } && done.Tile == current.Tile && done.Rows == current.Rows);
+        Check("A warning result says nothing changed", UpdateAdvisor.WithResult(current, new Advice("Close the game.", Severity.Warning)) is { Pill: "HEADS UP", Headline: "Nothing changed" });
+        Check("An error result is a problem", UpdateAdvisor.WithResult(current, new Advice("It broke.", Severity.Error)) is { Pill: "PROBLEM", Headline: "Something went wrong" });
+        views.Add(done);
+
+        Check("Every screen has a short upper-case pill, a headline and a tile title",
+            views.All(v => v.Pill.Length is > 0 and <= 12 && v.Pill == v.Pill.ToUpperInvariant() && v.Headline.Length > 0 && v.Tile.Title.Length > 0 && v.Tile.Title == v.Tile.Title.ToUpperInvariant()),
+            string.Join(", ", views.Where(v => v.Pill.Length > 12 || v.Pill != v.Pill.ToUpperInvariant()).Select(v => v.Pill)));
+        Check("A tile is only clickable when it has something to do", views.All(v => v.Tile.Enabled == (v.Tile.Action != TileAction.None)));
     }
 
     // ---------- Downloading ----------

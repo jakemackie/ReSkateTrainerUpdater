@@ -3,7 +3,7 @@ using ReSkateTrainerUpdater.Ui;
 
 namespace ReSkateTrainerUpdater.Ui.Controls;
 
-/// <summary>App icon, title and tagline at the top of the window.</summary>
+/// <summary>The app icon and the name in the launcher's marker-pen lettering.</summary>
 internal sealed class HeaderBar : BufferedControl
 {
     private Bitmap? _logo;
@@ -13,7 +13,7 @@ internal sealed class HeaderBar : BufferedControl
     {
         var g = Prepare(e);
 
-        int size = (int)S(48);
+        int size = (int)S(56);
         if (_logo == null || _logoSize != size)
         {
             _logo?.Dispose();
@@ -21,28 +21,22 @@ internal sealed class HeaderBar : BufferedControl
             _logoSize = size;
         }
 
-        var logoRect = new RectangleF(0, S(12), size, size);
-        using (var clip = Theme.RoundedRect(logoRect, S(10)))
+        var logoRect = new RectangleF(0, (Height - size) / 2f, size, size);
+        if (_logo != null)
         {
-            if (_logo != null)
-            {
-                g.SetClip(clip);
-                g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-                g.DrawImage(_logo, logoRect);
-                g.ResetClip();
-            }
-            else
-            {
-                using var brush = new SolidBrush(Theme.Accent);
-                g.FillPath(brush, clip);
-            }
+            g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+            g.DrawImage(_logo, logoRect);
+        }
+        else
+        {
+            using var brush = new SolidBrush(Theme.Accent);
+            g.FillRectangle(brush, logoRect);
         }
 
-        int tx = (int)(size + S(14));
-        TextRenderer.DrawText(g, AppInfo.Name, Theme.Title,
-            new Rectangle(tx, (int)S(10), Math.Max(0, Width - tx), (int)S(30)), Theme.Text, LeftFlags);
-        TextRenderer.DrawText(g, AppInfo.Tagline, Theme.Body,
-            new Rectangle(tx, (int)S(41), Math.Max(0, Width - tx), (int)S(22)), Theme.Muted, LeftFlags);
+        float tx = size + S(18);
+        float width = Math.Max(0, Width - tx);
+        TextPaint.Draw(g, AppInfo.Name.ToUpperInvariant(), Theme.Display, new RectangleF(tx, S(2), width, S(46)), Theme.Text, HAlign.Left, VAlign.Middle);
+        TextPaint.Draw(g, AppInfo.Tagline, Theme.Small, new RectangleF(tx, S(50), width, S(24)), Theme.Muted, HAlign.Left, VAlign.Top);
     }
 
     protected override void Dispose(bool disposing)

@@ -17,6 +17,9 @@ public enum Severity
 
     /// <summary>It can't go ahead like this.</summary>
     Error,
+
+    /// <summary>Something new is on offer, for example an update. Shown in the accent colour.</summary>
+    Highlight,
 }
 
 /// <summary>What to tell the user, and whether the Install button should be enabled.</summary>
@@ -31,6 +34,7 @@ public sealed record Advice(string Message, Severity Severity, bool CanInstall =
 /// <param name="CheckingFolder">The folder is still being inspected.</param>
 /// <param name="FolderInfo">What was found in the folder, once inspected.</param>
 /// <param name="Offer">What the online check offers for this folder, if it has run.</param>
+/// <param name="Online">Whether the start-up check of latest.json has finished and worked.</param>
 public sealed record UpdateContext(
     bool CheckingZip,
     string? ZipPath,
@@ -39,7 +43,8 @@ public sealed record UpdateContext(
     string? Folder,
     bool CheckingFolder,
     InstallFolderInfo? FolderInfo,
-    OnlineOffer? Offer = null);
+    OnlineOffer? Offer = null,
+    OnlineStatus Online = OnlineStatus.Checking);
 
 /// <summary>What the online check can do for the chosen folder.</summary>
 public enum OfferKind
@@ -57,19 +62,13 @@ public enum OfferKind
     UpToDate,
 }
 
-/// <summary>The banner text and button for an online install or update. Built by <see cref="UpdateAdvisor.DescribeOnlineOffer"/>.</summary>
+/// <summary>What the online check offers for the chosen folder: what kind of offer, and which published Trainer it is.</summary>
 /// <param name="Kind">What is on offer.</param>
 /// <param name="Entry">The manifest entry that would be downloaded. Set for FreshInstall, Update and UpToDate.</param>
-/// <param name="Title">The banner's main line.</param>
-/// <param name="Detail">The banner's second line.</param>
-/// <param name="ButtonText">The banner button's label.</param>
-public sealed record OnlineOffer(OfferKind Kind, ManifestEntry? Entry, string Title, string Detail, string ButtonText)
+public sealed record OnlineOffer(OfferKind Kind, ManifestEntry? Entry)
 {
-    public static OnlineOffer Nothing { get; } = new(OfferKind.None, null, "", "", "");
+    public static OnlineOffer Nothing { get; } = new(OfferKind.None, null);
 
-    /// <summary>True when the banner's button can be clicked to download.</summary>
+    /// <summary>True when there is a Trainer to download and install.</summary>
     public bool CanDownload => Kind is OfferKind.FreshInstall or OfferKind.Update && Entry is not null;
-
-    /// <summary>True when the banner is shown at all. When <see cref="CanDownload"/> is false its button is greyed out.</summary>
-    public bool ShowBanner => Kind != OfferKind.None;
 }

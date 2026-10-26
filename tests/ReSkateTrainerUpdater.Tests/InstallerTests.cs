@@ -27,6 +27,8 @@ internal static class InstallerTests
         var fresh = TrainerInstaller.Install(release, target, backup: true);
         Check("A fresh install adds every file", fresh is { Outcome: InstallOutcome.Installed, Added: 3, Replaced: 0 }, $"{fresh.Outcome} +{fresh.Added} ~{fresh.Replaced}");
         Check("The installed file matches the package", Hashing.Of(Path.Combine(target, "ReSkate.dll")) == Hashing.Of(releaseDll));
+        Check("A fresh install makes no backup and doesn't claim one",
+            fresh.BackupFolder is null && Directory.GetDirectories(target, "_ReSkateTrainerUpdater_backup_*").Length == 0);
         Check("Invariant: no half-written files are left behind", !Directory.EnumerateFiles(target, "*.updating", SearchOption.AllDirectories).Any());
         Check("The folder's version is now readable",
             InstallFolderInspector.Inspect(target).Installed is { TrainerVersion: "0.9.2", Edition: "Tournament" });
@@ -41,6 +43,7 @@ internal static class InstallerTests
         var replace = TrainerInstaller.Install(release, target, backup: true);
         Check("A changed file is replaced", replace is { Outcome: InstallOutcome.Installed, Replaced: 1, Added: 0 }, $"{replace.Outcome} ~{replace.Replaced}");
         Check("The replaced file matches the package again", Hashing.Of(dll) == Hashing.Of(releaseDll));
+        Check("A replacing install reports a backup folder that exists", replace.BackupFolder is not null && Directory.Exists(replace.BackupFolder));
         Check("The backup holds the file that was replaced",
             replace.BackupFolder is not null && File.ReadAllBytes(Path.Combine(replace.BackupFolder, "ReSkate.dll")).SequenceEqual(edited));
 

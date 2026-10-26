@@ -112,8 +112,9 @@ public static class TrainerInstaller
             }
 
             TryDeleteFolder(rescueFolder);
+            // A backup folder only exists if some file was replaced. Don't point the user at one that isn't there.
             return new InstallResult(InstallOutcome.Installed, added, replaced, unchanged, Array.Empty<string>(),
-                BackupFolder: backupFolder);
+                BackupFolder: replaced > 0 ? backupFolder : null);
         }
         catch (Exception ex)
         {

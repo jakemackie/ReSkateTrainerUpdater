@@ -121,10 +121,11 @@ start-up ──► FetchManifestAsync ──► TrainerManifest.Parse ──► 
 
 folder inspected or manifest arrives ──► UpdateAdvisor.DescribeOnlineOffer(manifest, folder)
                                               ──► OnlineOffer: None | FreshInstall | Update | UpToDate
-                                              ──► banner shown for FreshInstall and Update (button live)
-                                                  and UpToDate (button greyed out); hidden for None
+                                              ──► UpdateAdvisor.DescribeHome(...) turns that into the screen:
+                                                  FreshInstall -> blue INSTALL tile, Update -> blue UPDATE tile,
+                                                  UpToDate -> dark green UP TO DATE tile, None -> dark tile and a reason
 
-banner button clicked ──► TrainerDownloader.DownloadAsync(entry)
+big tile clicked (INSTALL or UPDATE) ──► TrainerDownloader.DownloadAsync(entry)
                               1. IsTrustedDownloadUrl(entry.Url), or refuse without a request
                               2. GET, following GitHub's redirect to its download host (https only)
                               3. Content-Length, if sent, must equal sizeBytes
@@ -135,7 +136,7 @@ banner button clicked ──► TrainerDownloader.DownloadAsync(entry)
                       ──► TrainerPackageLoader.Load(zip)          the same validation as a dropped zip
                       ──► TrainerDownloader.CheckPackageMatches     version, edition and build match latest.json
                       ──► delete the downloaded zip (the package keeps its own unpacked copy)
-                      ──► becomes the current package, shown in the drop zone as "downloaded from GitHub"
+                      ──► becomes the current package, shown in the zip tile as "Downloaded from GitHub"
                       ──► UpdaterForm.InstallAsync                 the same confirmations, backup and rollback
 ```
 
@@ -143,9 +144,18 @@ The online route adds checks in front of the normal install and replaces none of
 
 ## The window
 
+The window follows the ReSkate launcher: a STATUS card on the left, and on the right the folder, an optional zip,
+and one big tile. The look comes from `Theme` (colours sampled from the launcher) and the launcher's own fonts,
+Montserrat and Permanent Marker, which are embedded in the exe.
+
 `UpdaterForm` keeps a small amount of state: the chosen zip and its package, the chosen folder and what was found
-in it, the manifest, the current offer, and whether an install is running. Every change ends by calling
-`RefreshStatus`, which asks `UpdateAdvisor.Evaluate` what to show and whether **Install update** is enabled.
+in it, the manifest and whether it could be read, the current offer, and whether something is running. Every change
+ends by calling `Render`, which asks `UpdateAdvisor.DescribeHome` (or `DescribeBusy` while something runs, then
+`WithResult` for the outcome) for a `HomeView`, and hands its parts to `StatusCard` and `ActionTileControl`. The form
+makes no decisions about what to say.
+
+Text is drawn through `TextPaint` with GDI+, because the embedded fonts are only visible to GDI+. `GameFonts.Load()`
+reads them from the exe at start-up, before any control exists, and falls back to Windows fonts if one fails to load.
 
 Background work (unpacking, inspecting the folder, downloading, installing) runs on the thread pool. A generation
 counter throws away a result if the user picked something else while it was running. While an install or download
