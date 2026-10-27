@@ -241,7 +241,7 @@ internal sealed class UpdaterForm : Form, IBackdropHost
         if (ClientSize.Width <= 0 || ClientSize.Height <= 0) return;
         if (_backdrop is not null && _backdrop.Size == ClientSize) return;
         _backdrop?.Dispose();
-        _backdrop = Backdrop.Create(ClientSize.Width, ClientSize.Height);
+        _backdrop = Backdrop.Create(ClientSize.Width, ClientSize.Height, DpiScale);
     }
 
     // The window's own background is the backdrop, and so is whatever shows through a see-through card.

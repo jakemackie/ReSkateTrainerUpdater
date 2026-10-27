@@ -188,10 +188,12 @@ right, stacked up from the bottom, the folder, an optional zip, and one big tile
 tiles. It runs on every render because the status card is only as tall as its content.
 
 **See-through cards.** The launcher lets its background photo show faintly through its cards. Here the form paints a
-backdrop (`Backdrop`: an original dusk landscape, drawn once and cached) and implements `IBackdropHost`. Each card's
+backdrop (`Backdrop`: the launcher's photo, fitted and darkened the way the launcher does it, drawn once and cached) and
+implements `IBackdropHost`. Each card's
 `BufferedControl.Prepare` copies the part of the backdrop under it, then fills itself with a `Theme` colour that has an
-alpha, so the backdrop shows through. This only works because the cards are direct children of the form. The launcher's
-own photo is game artwork that is not ours to ship, which is why the backdrop is painted in code.
+alpha, so the backdrop shows through. This only works because the cards are direct children of the form. The photo is
+game artwork that belongs to Electronic Arts and Full Circle, credited in `THIRD-PARTY-NOTICES.md`. If it is removed or
+can't be read, `Backdrop` paints a dusk landscape in code instead.
 
 **Instant clicks.** `BufferedControl` turns off `ControlStyles.StandardDoubleClick`. Otherwise Windows delivers the
 second of two quick clicks as a double-click, which no control handles, and every other click of a fast series would be

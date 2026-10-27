@@ -17,6 +17,10 @@
     <!-- Also embedded, so the window and header can show the same icon. LogicalName must match AppIcon. -->
     <EmbeddedResource Include="Assets\ReSkateTrainerUpdater.ico" LogicalName="app.ico" />
 
+    <!-- The background photo, the same one the ReSkate launcher uses. See THIRD-PARTY-NOTICES.md. Delete this line and
+         Assets\background.jpg to remove it: the window then falls back to a painted backdrop. LogicalName must match Backdrop. -->
+    <EmbeddedResource Include="Assets\background.jpg" LogicalName="background.jpg" />
+
     <!-- The creator's profile picture, shown on the credit card. LogicalName must match AppImages. -->
     <EmbeddedResource Include="Assets\os_uk.png" LogicalName="profile.png" />
 

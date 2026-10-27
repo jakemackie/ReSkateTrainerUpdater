@@ -79,9 +79,14 @@ weakens the download checks, or breaks the release process.
    (`BufferedControl.DrawPill`) and round icons (`DrawStatusIcon`), never with tiny coloured text. Don't add rounded
    cards, gradients on cards, or drop shadows. Sizes and gaps come from measurements of the launcher at its default
    size of 1440 by 840 (60 from the left, 64 from the right, 56 from the bottom, 16 between tiles). Keep them.
-6. **The backdrop is original art, not the launcher's photo.** `Backdrop` paints a dusk landscape in code. The
-   launcher's photo is game artwork that isn't stored in the launcher and isn't ours to ship, so never copy it,
-   extract it from a game install, or add a game screenshot as the background.
+6. **The backdrop is the launcher's photo, with a painted fallback.** `Backdrop` draws `Assets/background.jpg`, the
+   same image the ReSkate launcher uses, fitted and darkened with the launcher's own numbers (its `draw_photo`). It
+   was copied from the public ReSkate repository, never taken from a game install. It is game artwork that belongs to
+   Electronic Arts and Full Circle, and the ReSkate README says it is not covered by that project's licence. It is
+   used on the creator's word that EA and Full Circle allow ReSkate community projects to use it. So: keep the credit in
+   `THIRD-PARTY-NOTICES.md`, never claim the project is affiliated with or endorsed by EA or Full Circle, add no other
+   game images, and if anyone objects, delete `Assets/background.jpg` and its line in the csproj. The window then falls
+   back to a backdrop painted in code, with no other change.
 7. **Cards are see-through, so they are direct children of the form.** `UpdaterForm` is an `IBackdropHost`: each card
    copies the part of the backdrop under it (`BufferedControl.Prepare`), then fills itself with a `Theme` colour that
    has an alpha. Don't put cards inside panels or table layouts, because the panel's background would hide the

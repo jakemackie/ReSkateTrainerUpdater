@@ -12,17 +12,74 @@ internal interface IBackdropHost
 }
 
 /// <summary>
-/// The picture behind the window. The launcher has a photo here and lets it show faintly through its cards. That photo is
-/// game artwork that isn't ours to ship, so this is an original stand-in painted in code: a dusk sky, a warm glow on
-/// the horizon, layers of hills fading into haze, darker edges where the text sits, and a little film grain.
-/// It is drawn once at the window's size and cached.
+/// The picture behind the window, drawn once at the window's size and cached. It is the photo the ReSkate launcher uses,
+/// fitted and darkened the way the launcher does it, so the cards sit over the same scene. The photo is game artwork that
+/// belongs to Electronic Arts and Full Circle (see THIRD-PARTY-NOTICES.md). If it is missing or can't be read, the window
+/// falls back to a backdrop painted in code: a dusk sky, layers of hills fading into haze, and a little film grain.
 /// </summary>
 internal static class Backdrop
 {
-    public static Bitmap Create(int width, int height)
+    // Must match the LogicalName of the EmbeddedResource in the project file.
+    private const string PhotoResource = "background.jpg";
+
+    public static Bitmap Create(int width, int height, float scale = 1f)
     {
         width = Math.Max(1, width);
         height = Math.Max(1, height);
+        return CreateFromPhoto(width, height, scale) ?? CreatePainted(width, height);
+    }
+
+    // The launcher's own treatment (its draw_photo): cover-fit with a slight zoom, a flat dark wash over everything, a
+    // strong fade to dark up from the bottom, and a short fade at the top, so text stays readable over the busy photo.
+    private static Bitmap? CreateFromPhoto(int width, int height, float scale)
+    {
+        try
+        {
+            using var stream = typeof(Backdrop).Assembly.GetManifestResourceStream(PhotoResource);
+            if (stream is null) return null;
+            using var photo = Image.FromStream(stream);
+
+            var bitmap = new Bitmap(width, height, PixelFormat.Format32bppPArgb);
+            using var g = Graphics.FromImage(bitmap);
+            g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+            g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+            g.SmoothingMode = SmoothingMode.None;
+
+            const float zoom = 1.04f;
+            float fit = Math.Max(width / (float)photo.Width, height / (float)photo.Height) * zoom;
+            float imageWidth = photo.Width * fit, imageHeight = photo.Height * fit;
+            g.DrawImage(photo, (width - imageWidth) / 2f, (height - imageHeight) / 2f, imageWidth, imageHeight);
+
+            using (var wash = new SolidBrush(Color.FromArgb(97, 6, 8, 12)))
+                g.FillRectangle(wash, 0, 0, width, height);
+
+            // Down from 45% of the way to the bottom: clear to 92% dark.
+            int fadeTop = (int)(height * 0.45f);
+            Fade(g, new Rectangle(0, fadeTop, width, height - fadeTop), LinearGradientMode.Vertical, 0, 235);
+
+            // The top 90 pixels: 60% dark fading to clear.
+            Fade(g, new Rectangle(0, 0, width, (int)(90 * scale)), LinearGradientMode.Vertical, 153, 0);
+            return bitmap;
+        }
+        catch (Exception ex) when (ex is ArgumentException or ExternalException or OutOfMemoryException)
+        {
+            return null; // not a readable image: use the painted backdrop instead
+        }
+    }
+
+    private static void Fade(Graphics g, Rectangle area, LinearGradientMode direction, int fromAlpha, int toAlpha)
+    {
+        if (area.Width <= 0 || area.Height <= 0) return;
+
+        // GDI+ gives the first and last pixel row of a gradient the opposite end's colour, which shows as a hairline.
+        // Making the brush's rectangle bigger than the area it fills keeps that row outside what is painted.
+        using var brush = new LinearGradientBrush(Rectangle.Inflate(area, 2, 2), Color.FromArgb(fromAlpha, 6, 8, 12), Color.FromArgb(toAlpha, 6, 8, 12), direction);
+        g.FillRectangle(brush, area);
+    }
+
+    // The fallback: a backdrop painted in code.
+    private static Bitmap CreatePainted(int width, int height)
+    {
         var bitmap = new Bitmap(width, height, PixelFormat.Format32bppPArgb);
 
         using (var g = Graphics.FromImage(bitmap))

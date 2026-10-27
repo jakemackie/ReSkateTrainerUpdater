@@ -328,8 +328,15 @@ OTHER DEALINGS IN THE FONT SOFTWARE.```
 The credit card in the top-left corner shows the creator's own profile picture (`Assets/os_uk.png`), supplied by the
 creator, os_uk, for this purpose.
 
-The backdrop behind the window is original artwork painted in code (`Backdrop.cs`). It is not the ReSkate launcher's
-background photo.
+The background of the window (`Assets/background.jpg`) is the same photo the ReSkate launcher uses
+(`assets/launcher/background.jpg` in https://github.com/Dingo-Shenanigans/ReSkate). It is artwork from the game skate.
+and belongs to Electronic Arts and Full Circle. It is not covered by any licence this project grants, and nothing here
+grants any rights to it. It is included on the creator's understanding that Electronic Arts and Full Circle allow ReSkate
+community projects to use it. ReSkate describes itself as a fan project that is not affiliated with or endorsed by
+Electronic Arts or Full Circle, and the same is true of this updater.
+
+If Electronic Arts or Full Circle ask for it to be removed, delete `Assets/background.jpg` and its line in
+`ReSkateTrainerUpdater.csproj`. The window then falls back to a backdrop painted in code (`Backdrop.cs`).
 
 ## Design
 
