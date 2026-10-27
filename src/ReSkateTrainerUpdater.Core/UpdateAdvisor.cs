@@ -320,6 +320,10 @@ public static class UpdateAdvisor
     private static StatusRow LatestRow(ManifestEntry entry, Severity severity) =>
         new($"Latest: {entry.TrainerText} · {ByteSize.Format(entry.SizeBytes)}", severity);
 
+    /// <summary>The credit card in the top-left corner: who made this tool.</summary>
+    public static ChipView DescribeCreator() =>
+        new($"Made by {AppCredits.CreatorHandle}", "Creator of this tool", Severity.Neutral, ShowDot: false);
+
     /// <summary>The chip in the top-left corner: whether GitHub could be reached, and which version of the app this is.</summary>
     public static ChipView DescribeConnection(OnlineStatus status, string appVersion)
     {

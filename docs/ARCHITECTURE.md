@@ -177,25 +177,41 @@ that wouldn't pass the app's own checks is never recorded in latest.json.
 
 ## The window
 
-The window follows the ReSkate launcher: no title bar, with minimise and close buttons drawn in the top-right
-corner. Top left are a small chip (the app icon, a GitHub status dot and the version) and the name in tilted marker
-lettering. Then a STATUS card on the left, and on the right the folder, an optional zip, and one big tile.
+The window is built to look like the ReSkate launcher, using measurements taken from the launcher at its default
+size of 1440 by 840 (or the screen's usable area, if that is smaller). It has no title bar, and minimise and close buttons
+are drawn in the top-right corner. Top left are two small cards, the creator's credit with their profile picture and
+GitHub's status, and under them the name in tilted marker lettering. Then a compact STATUS card on the left, and on the
+right, stacked up from the bottom, the folder, an optional zip, and one big tile.
 
-The window is borderless with a fixed size. `NativeMethods.ApplyWindowFrame` asks Windows 11 for rounded corners and a
-thin border, and gets a shadow by extending the frame one pixel into the window. On Windows 10 the corners stay
-square. Dragging any empty area moves the window by sending the same message a title bar would. The form keeps the
-minimise and system-menu window styles, which is what lets the taskbar button minimise and restore it. The look comes from `Theme` (colours sampled from the launcher) and the launcher's own fonts,
-Montserrat and Permanent Marker, which are embedded in the exe.
+**Layout.** There are no panels or table layouts. `UpdaterForm.LayoutAll` places every control directly on the form, in
+96-dpi units scaled by the display's DPI: 60 in from the left, 64 from the right, 56 up from the bottom, and 16 between
+tiles. It runs on every render because the status card is only as tall as its content.
 
-`UpdaterForm` keeps a small amount of state: the chosen zip and its package, the chosen folder and what was found
-in it, the manifest and whether it could be read, the current offer, and whether something is running. Every change
+**See-through cards.** The launcher lets its background photo show faintly through its cards. Here the form paints a
+backdrop (`Backdrop`: an original dusk landscape, drawn once and cached) and implements `IBackdropHost`. Each card's
+`BufferedControl.Prepare` copies the part of the backdrop under it, then fills itself with a `Theme` colour that has an
+alpha, so the backdrop shows through. This only works because the cards are direct children of the form. The launcher's
+own photo is game artwork that is not ours to ship, which is why the backdrop is painted in code.
+
+**Instant clicks.** `BufferedControl` turns off `ControlStyles.StandardDoubleClick`. Otherwise Windows delivers the
+second of two quick clicks as a double-click, which no control handles, and every other click of a fast series would be
+lost. There are no animations on the response to a click.
+
+**Window frame.** The window is borderless. `NativeMethods.ApplyWindowFrame` asks Windows 11 for rounded corners and a
+thin border, and gets a shadow by extending the frame one pixel into the window. On Windows 10 the corners stay square.
+Dragging any empty area moves the window by sending the same message a title bar would. The form keeps the minimise and
+system-menu window styles, which is what lets the taskbar button minimise and restore it.
+
+**State.** `UpdaterForm` keeps a small amount of state: the chosen zip and its package, the chosen folder and what was
+found in it, the manifest and whether it could be read, the current offer, and whether something is running. Every change
 ends by calling `Render`, which asks `UpdateAdvisor.DescribeHome` (or `DescribeBusy` while something runs, then
 `WithResult` for the outcome) for a `HomeView`, and hands its parts to `StatusCard` and `ActionTileControl`. The form
 makes no decisions about what to say.
 
-Text is drawn through `TextPaint` with GDI+, because the embedded fonts are only visible to GDI+. `GameFonts.Load()`
-reads them from the exe at start-up, before any control exists, and falls back to Windows fonts if one fails to load.
+**Text.** Text is drawn through `TextPaint` with GDI+, because the embedded fonts are only visible to GDI+.
+`GameFonts.Load()` reads them from the exe at start-up, before any control exists, and falls back to Windows fonts if one
+fails to load.
 
-Background work (unpacking, inspecting the folder, downloading, installing) runs on the thread pool. A generation
-counter throws away a result if the user picked something else while it was running. While an install or download
-runs, `_installing` blocks drops, browsing, and both buttons.
+Background work (unpacking, inspecting the folder, downloading, installing) runs on the thread pool. A generation counter
+throws away a result if the user picked something else while it was running. While an install or download runs,
+`_installing` blocks drops, browsing, and every button.

@@ -54,7 +54,7 @@ internal sealed class OptionRow : BufferedControl
         }
 
         // The checkbox: a dark square with a blue tick.
-        float box = S(30);
+        float box = S(28);
         float bx = S(20);
         float by = (Height - box) / 2f;
         using (var brush = new SolidBrush(Theme.Control))
@@ -74,8 +74,8 @@ internal sealed class OptionRow : BufferedControl
 
         float textX = bx + box + S(18);
         float textWidth = Math.Max(0, Width - textX - S(20));
-        TextPaint.Draw(g, Title, Theme.Strong, new RectangleF(textX, Height / 2f - S(24), textWidth, S(24)), Theme.Text, HAlign.Left, VAlign.Bottom);
-        TextPaint.Draw(g, Description, Theme.Small, new RectangleF(textX, Height / 2f + S(3), textWidth, S(24)), Theme.Muted, HAlign.Left, VAlign.Top);
+        TextPaint.Draw(g, Title, Theme.ChipTitle, new RectangleF(textX, Height / 2f - S(25), textWidth, S(24)), Theme.Text, HAlign.Left, VAlign.Bottom);
+        TextPaint.Draw(g, Description, Theme.Small, new RectangleF(textX, Height / 2f + S(1), textWidth, S(24)), Theme.Muted, HAlign.Left, VAlign.Top);
 
         DrawFocusRing(g, area);
     }

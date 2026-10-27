@@ -52,6 +52,8 @@ It sends nothing about you, your PC or your game: no IDs, folder paths, versions
 
 ## Credits and licences
 
+This updater was made by **os_uk**.
+
 The ReSkate Trainer is GPL-3.0 software by its authors. The Trainer zips published here are redistributed unmodified, with their `LICENSE.txt` and `README.txt` included. Source code:
 
 - ReSkate: https://github.com/Dingo-Shenanigans/ReSkate

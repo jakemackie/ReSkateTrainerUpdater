@@ -158,15 +158,16 @@ internal sealed class ActionTileControl : BufferedControl
             g.FillRectangle(brush, area);
         }
 
-        float pad = S(28);
-        var titleFont = FitTitle(g, tile.Title, Width - pad * 2 - (tile.Style == TileStyle.Success ? S(60) : 0));
-        TextPaint.Draw(g, tile.Title, titleFont, new RectangleF(pad, S(14), Width - pad * 1.4f, S(96)), ink, HAlign.Left, VAlign.Top);
+        // Where the launcher puts the word on its PLAY tile: 20 pixels in, near the top, with a small line at the bottom.
+        float pad = S(20);
+        var titleFont = FitTitle(g, tile.Title, Width - pad * 2 - (tile.Style == TileStyle.Success ? S(50) : 0));
+        TextPaint.Draw(g, tile.Title, titleFont, new RectangleF(pad, S(6), Width - pad * 1.4f, S(84)), ink, HAlign.Left, VAlign.Top);
 
-        TextPaint.Draw(g, tile.Subtitle, Theme.Strong, new RectangleF(pad, Height - S(56), Width - pad * 2, S(30)), subInk,
+        TextPaint.Draw(g, tile.Subtitle, Theme.ChipTitle, new RectangleF(pad, Height - S(54), Width - pad * 2, S(32)), subInk,
             HAlign.Left, VAlign.Bottom);
 
         if (tile.Style == TileStyle.Success)
-            DrawStatusIcon(g, Width - pad - S(20), pad + S(14), S(20), Severity.Good);
+            DrawStatusIcon(g, Width - pad - S(16), pad + S(18), S(16), Severity.Good);
 
         DrawFocusRing(g, area);
     }

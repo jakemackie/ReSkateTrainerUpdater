@@ -4,20 +4,25 @@ using ReSkateTrainerUpdater.Core;
 namespace ReSkateTrainerUpdater.Ui;
 
 /// <summary>
-/// The look of the ReSkate launcher: near-black background, flat square dark cards, one bright blue, one clear green,
-/// and Montserrat text with Permanent Marker for the big headings. The values were sampled from the launcher itself.
-/// Every control takes its colours and fonts from here.
+/// The look of the ReSkate launcher: near-black background, flat square dark cards that are a little see-through, one
+/// bright blue, one clear green, and Montserrat text with Permanent Marker for the big headings. The colours were
+/// sampled from the launcher itself. Every control takes its colours and fonts from here.
+/// The card colours have an alpha, because the cards are drawn over the window's backdrop (see Backdrop) and let a
+/// little of it show through, as in the launcher. Never use them as a BackColor: a native control can't be see-through.
 /// </summary>
 internal static class Theme
 {
     public static readonly Color Bg = Color.FromArgb(14, 15, 18);
-    public static readonly Color Card = Color.FromArgb(28, 27, 27);
-    public static readonly Color Tile = Color.FromArgb(26, 26, 26);
-    public static readonly Color TileHover = Color.FromArgb(37, 37, 39);
-    public static readonly Color Control = Color.FromArgb(45, 45, 47);
-    public static readonly Color ControlHover = Color.FromArgb(60, 60, 63);
-    public static readonly Color Divider = Color.FromArgb(48, 48, 50);
-    public static readonly Color Chip = Color.FromArgb(45, 49, 53);
+    public static readonly Color Card = Color.FromArgb(238, 28, 27, 27);
+    public static readonly Color Tile = Color.FromArgb(232, 26, 26, 26);
+    public static readonly Color TileHover = Color.FromArgb(240, 40, 40, 43);
+    public static readonly Color Control = Color.FromArgb(242, 45, 45, 47);
+    public static readonly Color ControlHover = Color.FromArgb(246, 60, 60, 63);
+    public static readonly Color Divider = Color.FromArgb(70, 255, 255, 255);
+    public static readonly Color Chip = Color.FromArgb(238, 45, 49, 53);
+
+    /// <summary>The card colour, fully solid, for native controls such as the log's text box.</summary>
+    public static readonly Color CardSolid = Color.FromArgb(28, 27, 27);
     public static readonly Color WindowBorder = Color.FromArgb(52, 53, 58);
 
     public static readonly Color Text = Color.FromArgb(255, 255, 255);
@@ -35,16 +40,19 @@ internal static class Theme
     public static readonly Color Ink = Color.FromArgb(8, 9, 12);
 
     // The big marker-pen headings.
-    public static readonly Font Wordmark = GameFonts.Create(GameFonts.Marker, "Segoe UI Black", 38f);
-    public static readonly Font Tile64 = GameFonts.Create(GameFonts.Marker, "Segoe UI Black", 52f);
+    public static readonly Font Wordmark = GameFonts.Create(GameFonts.Marker, "Segoe UI Black", 42f);
+    public static readonly Font Tile64 = GameFonts.Create(GameFonts.Marker, "Segoe UI Black", 40f);
 
     // Montserrat, as in the launcher: ExtraBold for titles and labels, SemiBold for sentences.
-    public static readonly Font Heading = GameFonts.Create(GameFonts.MontserratExtraBold, "Segoe UI Black", 18f);
-    public static readonly Font Title = GameFonts.Create(GameFonts.MontserratExtraBold, "Segoe UI Black", 14f);
-    public static readonly Font Strong = GameFonts.Create(GameFonts.MontserratExtraBold, "Segoe UI Black", 11f);
-    public static readonly Font Body = GameFonts.Create(GameFonts.MontserratSemiBold, "Segoe UI Semibold", 11f);
-    public static readonly Font Small = GameFonts.Create(GameFonts.MontserratSemiBold, "Segoe UI Semibold", 9.5f);
-    public static readonly Font Pill = GameFonts.Create(GameFonts.MontserratExtraBold, "Segoe UI Black", 8.5f);
+    // The sizes follow the launcher's at its default size: STATUS is big and bold, the sentences under it are small.
+    public static readonly Font Title = GameFonts.Create(GameFonts.MontserratExtraBold, "Segoe UI Black", 17f);
+    public static readonly Font TileTitle = GameFonts.Create(GameFonts.MontserratExtraBold, "Segoe UI Black", 16f);
+    public static readonly Font Heading = GameFonts.Create(GameFonts.MontserratExtraBold, "Segoe UI Black", 13.5f);
+    public static readonly Font Strong = GameFonts.Create(GameFonts.MontserratExtraBold, "Segoe UI Black", 11.5f);
+    public static readonly Font ChipTitle = GameFonts.Create(GameFonts.MontserratExtraBold, "Segoe UI Black", 10.5f);
+    public static readonly Font Body = GameFonts.Create(GameFonts.MontserratSemiBold, "Segoe UI Semibold", 10f);
+    public static readonly Font Small = GameFonts.Create(GameFonts.MontserratSemiBold, "Segoe UI Semibold", 9f);
+    public static readonly Font Pill = GameFonts.Create(GameFonts.MontserratExtraBold, "Segoe UI Black", 7.8f);
     public static readonly Font Mono = new("Consolas", 10f);
 
     /// <summary>The colour that goes with a message of the given severity.</summary>

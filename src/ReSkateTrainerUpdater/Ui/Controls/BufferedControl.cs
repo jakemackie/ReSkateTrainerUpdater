@@ -15,6 +15,12 @@ internal abstract class BufferedControl : Control
     {
         SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint |
                  ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+
+        // Without this, a second click within the system's double-click time (about half a second) is delivered as a
+        // double-click event, which nothing here handles, so every other click of a quick series is silently lost.
+        // With it, every click is a click. A button must feel instant.
+        SetStyle(ControlStyles.StandardDoubleClick, false);
+
         TabStop = false;
     }
 
@@ -33,7 +39,10 @@ internal abstract class BufferedControl : Control
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.PixelOffsetMode = PixelOffsetMode.HighQuality;
         g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
-        g.Clear(ParentBack);
+
+        // Start from the window's backdrop, so a see-through card shows it faintly, as in the launcher.
+        if (Parent is IBackdropHost host) host.DrawBackdrop(g, Bounds);
+        else g.Clear(ParentBack);
         return g;
     }
 
@@ -51,7 +60,7 @@ internal abstract class BufferedControl : Control
     protected int PillWidth(Graphics g, string text)
     {
         var size = TextPaint.Measure(g, text, Theme.Pill);
-        return (int)Math.Ceiling(size.Width + S(26));
+        return (int)Math.Ceiling(size.Width + S(22));
     }
 
     /// <summary>
@@ -60,7 +69,7 @@ internal abstract class BufferedControl : Control
     /// </summary>
     protected Rectangle DrawPill(Graphics g, int x, int y, string text, Color fill)
     {
-        int height = (int)S(24);
+        int height = (int)S(21);
         var rect = new Rectangle(x, y, PillWidth(g, text), height);
 
         using (var path = Theme.RoundedRect(rect, height / 2f))
@@ -143,29 +152,31 @@ internal abstract class BufferedControl : Control
         }
     }
 
-    protected void DrawFolderGlyph(Graphics g, float cx, float cy, Color color)
+    protected void DrawFolderGlyph(Graphics g, float cx, float cy, Color color, float scale = 1f)
     {
+        float k = S(scale);
         using var brush = new SolidBrush(color);
-        using (var tab = Theme.RoundedRect(new RectangleF(cx - S(11), cy - S(8), S(10), S(6)), S(1.5f)))
+        using (var tab = Theme.RoundedRect(new RectangleF(cx - 11 * k, cy - 8 * k, 10 * k, 6 * k), 1.5f * k))
             g.FillPath(brush, tab);
-        using (var body = Theme.RoundedRect(new RectangleF(cx - S(11), cy - S(5), S(22), S(15)), S(2.5f)))
+        using (var body = Theme.RoundedRect(new RectangleF(cx - 11 * k, cy - 5 * k, 22 * k, 15 * k), 2.5f * k))
             g.FillPath(brush, body);
     }
 
-    protected void DrawZipGlyph(Graphics g, float cx, float cy, Color color)
+    protected void DrawZipGlyph(Graphics g, float cx, float cy, Color color, float scale = 1f)
     {
-        using var pen = new Pen(color, S(2f)) { LineJoin = LineJoin.Round, StartCap = LineCap.Round, EndCap = LineCap.Round };
+        float k = S(scale);
+        using var pen = new Pen(color, 2f * k) { LineJoin = LineJoin.Round, StartCap = LineCap.Round, EndCap = LineCap.Round };
         // A sheet with a folded corner and a zip down the middle.
         g.DrawLines(pen, new[]
         {
-            new PointF(cx - S(8), cy - S(11)), new PointF(cx + S(3), cy - S(11)), new PointF(cx + S(9), cy - S(5)),
-            new PointF(cx + S(9), cy + S(11)), new PointF(cx - S(8), cy + S(11)), new PointF(cx - S(8), cy - S(11)),
+            new PointF(cx - 8 * k, cy - 11 * k), new PointF(cx + 3 * k, cy - 11 * k), new PointF(cx + 9 * k, cy - 5 * k),
+            new PointF(cx + 9 * k, cy + 11 * k), new PointF(cx - 8 * k, cy + 11 * k), new PointF(cx - 8 * k, cy - 11 * k),
         });
-        using var thin = new Pen(color, S(1.6f)) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+        using var thin = new Pen(color, 1.6f * k) { StartCap = LineCap.Round, EndCap = LineCap.Round };
         for (int i = 0; i < 4; i++)
         {
-            float y = cy - S(7) + i * S(4.4f);
-            g.DrawLine(thin, cx - S(1.5f) + (i % 2 == 0 ? 0 : S(3)), y, cx + S(1.5f) + (i % 2 == 0 ? 0 : S(3)) - S(3), y);
+            float y = cy - 7 * k + i * 4.4f * k;
+            g.DrawLine(thin, cx - 1.5f * k + (i % 2 == 0 ? 0 : 3 * k), y, cx + 1.5f * k + (i % 2 == 0 ? 0 : 3 * k) - 3 * k, y);
         }
     }
 

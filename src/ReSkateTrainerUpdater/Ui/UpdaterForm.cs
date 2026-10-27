@@ -12,7 +12,7 @@ namespace ReSkateTrainerUpdater.Ui;
 /// installs a zip the user dropped. Both routes end in the same InstallAsync.
 /// This class only handles the window. What to show, what to download and how to install lives in Core.
 /// </summary>
-internal sealed class UpdaterForm : Form
+internal sealed class UpdaterForm : Form, IBackdropHost
 {
     private readonly UpdaterSettings _settings = UpdaterSettings.Load();
 
@@ -28,7 +28,7 @@ internal sealed class UpdaterForm : Form
         Title = "BACK UP REPLACED FILES",
         Description = "Keeps a copy of your old files, just in case.",
     };
-    private readonly SquareButton _logButton = new() { Text = "ACTIVITY LOG", Width = 170, Dark = true };
+    private readonly SquareButton _logButton = new() { Text = "ACTIVITY LOG", Dark = true };
     private readonly WindowButtons _windowButtons = new();
     private readonly string _version = typeof(UpdaterForm).Assembly.GetName().Version?.ToString(3) ?? "";
 
@@ -66,8 +66,9 @@ internal sealed class UpdaterForm : Form
     public UpdaterForm(bool justUpdated = false)
     {
         Text = AppInfo.Name;
-        AutoScaleMode = AutoScaleMode.Dpi;
-        AutoScaleDimensions = new SizeF(96f, 96f);
+        // Everything is placed by hand from the launcher's measurements and scaled by the display's DPI (see LayoutAll).
+        AutoScaleMode = AutoScaleMode.None;
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
         BackColor = Theme.Bg;
         ForeColor = Theme.Text;
         Font = new Font("Segoe UI", 10f);
@@ -76,15 +77,19 @@ internal sealed class UpdaterForm : Form
         FormBorderStyle = FormBorderStyle.None;
         MaximizeBox = false;
 
-        // Roomy by default, but never bigger than the screen's usable area (a small laptop screen still fits it).
+        // The launcher's default size, but never bigger than the screen's usable area (a small laptop screen still fits it).
         var area = Screen.FromPoint(Cursor.Position).WorkingArea;
-        ClientSize = new Size(Math.Min(1120, area.Width - 60), Math.Min(800, area.Height - 60));
+        float k = DpiScale;
+        ClientSize = new Size(
+            Math.Min((int)(DesignWidth * k), area.Width - (int)(40 * k)),
+            Math.Min((int)(DesignHeight * k), area.Height - (int)(40 * k)));
         StartPosition = FormStartPosition.CenterScreen;
 
         if (AppIcon.Load() is { } icon) Icon = icon;
 
         BuildLayout();
         MakeDraggable(this);
+        _header.SetCreator(UpdateAdvisor.DescribeCreator());
 
         // Restore what the user had last time.
         _backupRow.SetCheckedImmediate(_settings.BackupReplacedFiles);
@@ -155,86 +160,119 @@ internal sealed class UpdaterForm : Form
 
     // ---------- Layout ----------
 
+    // The window is laid out by hand, from the launcher's own measurements (taken at its default size of 1440 by 840):
+    // 60 pixels in from the left and 64 from the right, 56 up from the bottom, and 16 between the tiles.
+    // Cards are placed directly on the form so that they can draw over its backdrop and let it show faintly through.
+    private const float DesignWidth = 1440f;
+    private const float DesignHeight = 840f;
+    private const float MarginLeft = 60f;
+    private const float MarginRight = 64f;
+    private const float MarginBottom = 56f;
+    private const float Gap = 16f;
+
+    private HomeView? _homeView;
+    private Bitmap? _backdrop;
+
+    private float DpiScale => DeviceDpi / 96f;
+
     private void BuildLayout()
     {
-        var root = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            ColumnCount = 1,
-            RowCount = 3,
-            BackColor = Theme.Bg,
-            Padding = new Padding(46, 28, 46, 32),
-        };
-        root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 140f));
-        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 62f));
-
-        _header.Dock = DockStyle.Fill;
-        _header.Margin = Padding.Empty;
-        root.Controls.Add(_header, 0, 0);
-
-        // Body: two columns with a gap between them.
-        var body = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, BackColor = Theme.Bg, Margin = Padding.Empty };
-        body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55f));
-        body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45f));
-        body.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
-
-        // Left: the status card (or the log in its place), and the backup option under it.
-        var left = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, BackColor = Theme.Bg, Margin = new Padding(0, 0, 20, 0) };
-        left.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-        left.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
-        left.RowStyles.Add(new RowStyle(SizeType.Absolute, 92f));
-
-        var stack = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Bg, Margin = Padding.Empty };
-        _statusCard.Dock = DockStyle.Fill;
         BuildLogCard();
-        stack.Controls.Add(_logCard);
-        stack.Controls.Add(_statusCard);
-        left.Controls.Add(stack, 0, 0);
 
-        _backupRow.Dock = DockStyle.Fill;
-        _backupRow.Margin = new Padding(0, 20, 0, 0);
-        left.Controls.Add(_backupRow, 0, 1);
-
-        // Right: the folder, the zip, and the big tile.
-        var right = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, BackColor = Theme.Bg, Margin = new Padding(20, 0, 0, 0) };
-        right.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-        right.RowStyles.Add(new RowStyle(SizeType.Absolute, 98f));
-        right.RowStyles.Add(new RowStyle(SizeType.Absolute, 98f));
-        right.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
-
-        _folderTile.Dock = DockStyle.Fill;
-        _folderTile.Margin = Padding.Empty;
-        _zipTile.Dock = DockStyle.Fill;
-        _zipTile.Margin = new Padding(0, 20, 0, 0);
-        _actionTile.Dock = DockStyle.Fill;
-        _actionTile.Margin = new Padding(0, 20, 0, 0);
-        right.Controls.Add(_folderTile, 0, 0);
-        right.Controls.Add(_zipTile, 0, 1);
-        right.Controls.Add(_actionTile, 0, 2);
-
-        body.Controls.Add(left, 0, 0);
-        body.Controls.Add(right, 1, 0);
-        root.Controls.Add(body, 0, 1);
-
-        // Footer: the log button, like CHANGELOGS in the launcher.
-        var footer = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, BackColor = Theme.Bg, Margin = Padding.Empty };
-        footer.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 180f));
-        footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-        footer.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
-        _logButton.Dock = DockStyle.Fill;
-        _logButton.Margin = new Padding(0, 20, 0, 0);
-        footer.Controls.Add(_logButton, 0, 0);
-        root.Controls.Add(footer, 0, 2);
-
-        Controls.Add(root);
-
-        // Minimise and close, flush in the top-right corner and above everything else.
-        _windowButtons.Location = new Point(ClientSize.Width - _windowButtons.Width, 0);
-        _windowButtons.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-        Controls.Add(_windowButtons);
+        foreach (Control control in new Control[]
+                 {
+                     _header, _statusCard, _logCard, _backupRow, _logButton,
+                     _folderTile, _zipTile, _actionTile, _windowButtons,
+                 })
+        {
+            Controls.Add(control);
+        }
         _windowButtons.BringToFront();
+        LayoutAll();
+    }
+
+    // Puts every control where it belongs for the current window size. Cheap, so it runs whenever the card heights may change.
+    private void LayoutAll()
+    {
+        float k = DpiScale;
+        float w = ClientSize.Width / k;
+        float h = ClientSize.Height / k;
+        int X(float v) => (int)Math.Round(v * k);
+        Rectangle R(float x, float y, float width, float height) => new(X(x), X(y), X(width), X(height));
+
+        // Top left: the two cards and the wordmark. Top right: minimise and close, flush in the corner.
+        _header.Bounds = R(50, 40, 720, 140);
+        _windowButtons.Bounds = new Rectangle(ClientSize.Width - X(WindowButtons.ButtonWidth * 2), 0, X(WindowButtons.ButtonWidth * 2), X(WindowButtons.ButtonHeight));
+
+        // Right column, stacked up from the bottom like the launcher's SETTINGS, MOD MANAGER and PLAY.
+        float columnWidth = Math.Max(330f, w * 0.25f);
+        float columnX = w - MarginRight - columnWidth;
+        float tileHeight = 96f;
+        float actionHeight = Math.Clamp(h * 0.19f, 136f, 172f);
+        float y = h - MarginBottom - actionHeight;
+        _actionTile.Bounds = R(columnX, y, columnWidth, actionHeight);
+        y -= Gap + tileHeight;
+        _zipTile.Bounds = R(columnX, y, columnWidth, tileHeight);
+        y -= Gap + tileHeight;
+        _folderTile.Bounds = R(columnX, y, columnWidth, tileHeight);
+
+        // Left column: the status card, as tall as its content, with the backup option under it.
+        float leftWidth = Math.Min(500f, w * 0.345f);
+        float cardTop = 200f;
+        int cardHeight = _homeView is null ? X(160) : _statusCard.PreferredHeight(_homeView, X(leftWidth));
+        _statusCard.Bounds = new Rectangle(X(MarginLeft), X(cardTop), X(leftWidth), cardHeight);
+        _backupRow.Bounds = new Rectangle(X(MarginLeft), _statusCard.Bottom + X(Gap), X(leftWidth), X(72));
+
+        // Bottom left: the log button, like the launcher's CHANGELOGS. The log itself opens over the status card.
+        float buttonHeight = 52f;
+        _logButton.Bounds = R(MarginLeft, h - MarginBottom - buttonHeight, 190, buttonHeight);
+        _logCard.Bounds = R(MarginLeft, cardTop, columnX - MarginLeft - 32, h - MarginBottom - buttonHeight - Gap - cardTop);
+    }
+
+    protected override void OnSizeChanged(EventArgs e)
+    {
+        base.OnSizeChanged(e);
+        RebuildBackdrop();
+        LayoutAll();
+    }
+
+    private void RebuildBackdrop()
+    {
+        if (ClientSize.Width <= 0 || ClientSize.Height <= 0) return;
+        if (_backdrop is not null && _backdrop.Size == ClientSize) return;
+        _backdrop?.Dispose();
+        _backdrop = Backdrop.Create(ClientSize.Width, ClientSize.Height);
+    }
+
+    // The window's own background is the backdrop, and so is whatever shows through a see-through card.
+    protected override void OnPaintBackground(PaintEventArgs e)
+    {
+        RebuildBackdrop();
+        if (_backdrop is not null) e.Graphics.DrawImageUnscaled(_backdrop, 0, 0);
+        else e.Graphics.Clear(Theme.Bg);
+    }
+
+    void IBackdropHost.DrawBackdrop(Graphics g, Rectangle childBounds)
+    {
+        RebuildBackdrop();
+        if (_backdrop is null)
+        {
+            g.Clear(Theme.Bg);
+            return;
+        }
+
+        // An exact copy of the part of the backdrop under the card, with no resampling.
+        var state = g.Save();
+        g.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
+        g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
+        g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half; // with None, the first row and column are only half covered
+
+        // Clamp the edges, so the copy never reaches past the part of the backdrop it was asked for.
+        using var attributes = new System.Drawing.Imaging.ImageAttributes();
+        attributes.SetWrapMode(System.Drawing.Drawing2D.WrapMode.TileFlipXY);
+        g.DrawImage(_backdrop, new Rectangle(0, 0, childBounds.Width, childBounds.Height),
+            childBounds.X, childBounds.Y, childBounds.Width, childBounds.Height, GraphicsUnit.Pixel, attributes);
+        g.Restore(state);
     }
 
     private void BuildLogCard()
@@ -242,7 +280,7 @@ internal sealed class UpdaterForm : Form
         _log.Multiline = true;
         _log.ReadOnly = true;
         _log.BorderStyle = BorderStyle.None;
-        _log.BackColor = Theme.Card;
+        _log.BackColor = Theme.CardSolid;
         _log.ForeColor = Theme.Muted;
         _log.Font = Theme.Mono;
         _log.ScrollBars = ScrollBars.Vertical;
@@ -250,8 +288,7 @@ internal sealed class UpdaterForm : Form
         _log.TabStop = false;
         _log.HandleCreated += (_, _) => NativeMethods.UseDarkScrollbars(_log.Handle);
 
-        _logCard.Dock = DockStyle.Fill;
-        _logCard.Padding = new Padding(30, 66, 16, 20);
+        _logCard.Padding = new Padding(22, 60, 14, 18);
         _logCard.Controls.Add(_log);
     }
 
@@ -260,6 +297,7 @@ internal sealed class UpdaterForm : Form
         bool show = !_logCard.Visible;
         _logCard.Visible = show;
         _statusCard.Visible = !show;
+        _backupRow.Visible = !show;
         _logButton.Text = show ? "BACK TO STATUS" : "ACTIVITY LOG";
     }
 
@@ -461,11 +499,13 @@ internal sealed class UpdaterForm : Form
         HomeView view = _busyView ?? UpdateAdvisor.DescribeHome(CurrentContext());
         if (_busyView is null && _result is { } result) view = UpdateAdvisor.WithResult(view, result);
 
+        _homeView = view;
         _statusCard.Show(view);
         _actionTile.Show(view.Tile);
+        LayoutAll(); // the status card is as tall as its content, so the things under it move with it
         _tileAction = view.Tile.Action;
 
-        _header.SetChip(UpdateAdvisor.DescribeConnection(_online, _version));
+        _header.SetStatus(UpdateAdvisor.DescribeConnection(_online, _version));
         _folderTile.Set("RESKATE FOLDER", _folder ?? "Click to choose your ReSkate folder");
         _zipTile.Set(
             "TRAINER ZIP",

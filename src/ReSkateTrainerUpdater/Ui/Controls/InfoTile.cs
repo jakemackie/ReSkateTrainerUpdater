@@ -72,32 +72,32 @@ internal sealed class InfoTile : BufferedControl
             g.DrawRectangle(pen, S(1), S(1), Width - S(2), Height - S(2));
         }
 
-        // The icon, or a cross, on the right.
-        float iconCx = Width - S(44);
+        // The icon, or a cross, on the right, 44 pixels from the edge as in the launcher.
+        float iconCx = Width - S(46);
         float cy = Height / 2f;
-        var iconColour = Highlight ? Theme.Accent : Color.FromArgb(120, 121, 128);
+        var iconColour = Highlight ? Theme.Accent : Color.FromArgb(128, 129, 136);
         if (Clearable)
         {
-            _clearBounds = new Rectangle((int)(iconCx - S(20)), (int)(cy - S(20)), (int)S(40), (int)S(40));
+            _clearBounds = new Rectangle((int)(iconCx - S(22)), (int)(cy - S(22)), (int)S(44), (int)S(44));
             if (_clearBounds.Contains(PointToClient(Cursor.Position)))
             {
                 using var wash = new SolidBrush(Theme.ControlHover);
                 g.FillRectangle(wash, _clearBounds);
             }
-            DrawCrossGlyph(g, iconCx, cy, Theme.Text, S(7));
+            DrawCrossGlyph(g, iconCx, cy, Theme.Text, S(8));
         }
         else
         {
             _clearBounds = Rectangle.Empty;
-            if (Glyph == TileGlyph.Folder) DrawFolderGlyph(g, iconCx, cy, iconColour);
-            else DrawZipGlyph(g, iconCx, cy, iconColour);
+            if (Glyph == TileGlyph.Folder) DrawFolderGlyph(g, iconCx, cy, iconColour, 1.5f);
+            else DrawZipGlyph(g, iconCx, cy, iconColour, 1.5f);
         }
 
-        // The words.
-        float textX = S(24);
-        float textWidth = Math.Max(0, iconCx - S(34) - textX);
-        TextPaint.Draw(g, Title, Theme.Title, new RectangleF(textX, cy - S(31), textWidth, S(30)), Theme.Text, HAlign.Left, VAlign.Bottom);
-        TextPaint.Draw(g, Subtitle, Theme.Small, new RectangleF(textX, cy + S(1), textWidth, S(24)), Theme.Muted,
+        // The words: the title 17 pixels in, with the small line under it.
+        float textX = S(18);
+        float textWidth = Math.Max(0, iconCx - S(40) - textX);
+        TextPaint.Draw(g, Title, Theme.TileTitle, new RectangleF(textX, cy - S(32), textWidth, S(30)), Theme.Text, HAlign.Left, VAlign.Middle);
+        TextPaint.Draw(g, Subtitle, Theme.Small, new RectangleF(textX, cy + S(2), textWidth, S(24)), Theme.Muted,
             HAlign.Left, VAlign.Top, pathEllipsis: PathSubtitle);
 
         DrawFocusRing(g, area);

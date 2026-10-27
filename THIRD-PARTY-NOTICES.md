@@ -323,6 +323,14 @@ DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
 OTHER DEALINGS IN THE FONT SOFTWARE.```
 
+## Images
+
+The credit card in the top-left corner shows the creator's own profile picture (`Assets/os_uk.png`), supplied by the
+creator, os_uk, for this purpose.
+
+The backdrop behind the window is original artwork painted in code (`Backdrop.cs`). It is not the ReSkate launcher's
+background photo.
+
 ## Design
 
 The layout, colours and typography of the window follow the look of the ReSkate launcher

@@ -73,48 +73,62 @@ weakens the download checks, or breaks the release process.
 4. **Custom controls live in `src/ReSkateTrainerUpdater/Ui/Controls`**, derive from `BufferedControl`, take
    colours and fonts from `Theme`, and scale pixel sizes with `S(...)` for DPI. Never hard-code a font size or a
    colour in a control.
-5. **The look is the ReSkate launcher's.** Flat, square-cornered dark cards. One bright blue, one green, sampled from
-   the launcher and kept in `Theme`. Montserrat for text, and Permanent Marker only for the big headings (the
-   window title and the action tile). Status is shown with filled pills (`BufferedControl.DrawPill`) and round icons
-   (`DrawStatusIcon`), never with tiny coloured text. Don't add rounded cards, gradients or drop shadows.
-6. **The window has no title bar, like the launcher's.** `UpdaterForm` is borderless (`FormBorderStyle.None`) with a
-   fixed size. The corner buttons are `WindowButtons` (minimise and close only, no maximise), the window is moved by
+5. **The look is the ReSkate launcher's.** Flat, square-cornered dark cards that are a little see-through, over a
+   backdrop. One bright blue, one green, sampled from the launcher and kept in `Theme`. Montserrat for text, and
+   Permanent Marker only for the big headings (the wordmark and the action tile). Status is shown with filled pills
+   (`BufferedControl.DrawPill`) and round icons (`DrawStatusIcon`), never with tiny coloured text. Don't add rounded
+   cards, gradients on cards, or drop shadows. Sizes and gaps come from measurements of the launcher at its default
+   size of 1440 by 840 (60 from the left, 64 from the right, 56 from the bottom, 16 between tiles). Keep them.
+6. **The backdrop is original art, not the launcher's photo.** `Backdrop` paints a dusk landscape in code. The
+   launcher's photo is game artwork that isn't stored in the launcher and isn't ours to ship, so never copy it,
+   extract it from a game install, or add a game screenshot as the background.
+7. **Cards are see-through, so they are direct children of the form.** `UpdaterForm` is an `IBackdropHost`: each card
+   copies the part of the backdrop under it (`BufferedControl.Prepare`), then fills itself with a `Theme` colour that
+   has an alpha. Don't put cards inside panels or table layouts, because the panel's background would hide the
+   backdrop. Never use a see-through `Theme` colour as a `BackColor` (a native control can't be see-through); use
+   `Theme.CardSolid`. The cards are placed by `UpdaterForm.LayoutAll`, in 96-dpi units scaled by the display's DPI.
+8. **Every click must register, instantly.** `BufferedControl` turns off `ControlStyles.StandardDoubleClick`. Without
+   it Windows delivers the second of two quick clicks as a double-click, which nothing handles, so every other click
+   of a fast series is lost. Derive every interactive control from `BufferedControl`, handle `Click` or the mouse
+   events, never `DoubleClick`, and don't add animations or timers to a click's response (the checkbox is instant).
+9. **The window has no title bar, like the launcher's.** `UpdaterForm` is borderless (`FormBorderStyle.None`) with a
+   fixed size: the launcher's 1440 by 840, or the screen's usable area if that is smaller. The corner buttons are `WindowButtons` (minimise and close only, no maximise), the window is moved by
    dragging any empty area (`MakeDraggable`), and `NativeMethods.ApplyWindowFrame` asks Windows for rounded corners,
    a thin border and a shadow. Keep the `CreateParams` override: without the minimise and system-menu styles,
    clicking the taskbar button no longer minimises the window. Don't put the native title bar back.
-7. **Draw text with `TextPaint`, never `TextRenderer` or `Label`.** The launcher's fonts are loaded into GDI+ from
+10. **Draw text with `TextPaint`, never `TextRenderer` or `Label`.** The launcher's fonts are loaded into GDI+ from
    resources embedded in the exe (`GameFonts`), and only GDI+ can see them. Don't add `StringFormatFlags.LineLimit`:
    the marker font's lines are taller than its glyphs, and that flag silently hides text that doesn't fit whole.
-8. **Keep `THIRD-PARTY-NOTICES.md` in the release zip** (`build-release.ps1` does this). The font licences require it.
+11. **Keep `THIRD-PARTY-NOTICES.md` in the release zip** (`build-release.ps1` does this). The font licences require it.
    If you add a font, image or library, add its licence there.
 
 ### The ReSkate folder
 
-9. **Only `TrainerInstaller.Install` writes to the user's ReSkate folder.** Nothing else may create, change or
+12. **Only `TrainerInstaller.Install` writes to the user's ReSkate folder.** Nothing else may create, change or
    delete files there.
-10. **Keep the install guarantees** (see `docs/ARCHITECTURE.md`): check write access and locked files before
+13. **Keep the install guarantees** (see `docs/ARCHITECTURE.md`): check write access and locked files before
    changing anything, write each file as `<name>.updating` and then move it into place, save every replaced file
    first, and put everything back if any step fails. Any change to `TrainerInstaller` must keep every
    `Invariant:` check in `InstallerTests.cs` passing.
 
 ### Online updates
 
-11. **`OnlineSource` is the only place that names a URL, owner, repository or branch.** Do not write
+14. **`OnlineSource` is the only place that names a URL, owner, repository or branch.** Do not write
    `github.com` or `raw.githubusercontent.com` anywhere else in `src/`.
-12. **Never weaken `OnlineSource.IsTrustedDownloadUrl`.** It only accepts
+15. **Never weaken `OnlineSource.IsTrustedDownloadUrl`.** It only accepts
    `https://github.com/jakemackie/ReSkateTrainerUpdater/releases/download/<tag>/<file>.zip`.
    `TrainerDownloader.DownloadAsync` checks it again before every request. Do not add other hosts, mirrors,
    http, or a setting that overrides it.
-13. **A downloaded zip reaches `TrainerInstaller` only after all three checks pass**: the exact size from
+16. **A downloaded zip reaches `TrainerInstaller` only after all three checks pass**: the exact size from
    `latest.json`, the exact SHA-256 from `latest.json`, and `TrainerDownloader.CheckPackageMatches`, which
    confirms the version, edition and build inside the DLL. On any failure the download is deleted and the folder
    is not touched.
-14. **Never install without a click.** The app may tell the user an update exists. It must never download or
+17. **Never install without a click.** The app may tell the user an update exists. It must never download or
    install a Trainer, or a new version of itself, on its own.
-15. **Network failures are silent.** If `latest.json` can't be fetched or read, the status card says it couldn't
+18. **Network failures are silent.** If `latest.json` can't be fetched or read, the status card says it couldn't
     check (a calm grey "OFFLINE" pill) and one line goes to the activity log. No dialogs and no error colours.
     Dropping a zip must keep working with no internet.
-16. **No telemetry.** The app sends two kinds of request only: a GET for `latest.json` on start-up, and a GET
+19. **No telemetry.** The app sends two kinds of request only: a GET for `latest.json` on start-up, and a GET
     for one zip (a Trainer, or a new version of the app) when the user clicks the big tile. The only header added is the User-Agent
     `ReSkateTrainerUpdater/<version>`. Don't add analytics, IDs, crash reporting, or anything else.
 
@@ -138,33 +152,33 @@ A self-update installs code, so it is held to a stricter standard than a Trainer
 
 ### latest.json
 
-17. **Change `latest.json` only with the manifest tool** (`add`). The tests fail if the committed file isn't
+20. **Change `latest.json` only with the manifest tool** (`add`). The tests fail if the committed file isn't
     valid or isn't byte-for-byte in the tool's canonical format. Never type a hash by hand.
-18. **Adding an optional field** to a manifest entry doesn't need a schema change, because old apps ignore unknown
+21. **Adding an optional field** to a manifest entry doesn't need a schema change, because old apps ignore unknown
     fields. Update `ManifestEntry`, `TrainerManifest.Parse`, `CheckEntry` and `ToJson` together, and add tests.
     **A breaking change** (renaming or removing a field, or changing what one means) needs
     `TrainerManifest.SupportedSchemaVersion` raised. Older apps then ignore the file and show nothing, which is
     the safe failure. Publish the new app before you push a manifest in the new format.
-19. **The format is documented in `docs/ONLINE-UPDATES.md`.** Keep that file in step with the code.
+22. **The format is documented in `docs/ONLINE-UPDATES.md`.** Keep that file in step with the code.
 
 ### Releases, versions and files
 
-20. **The app version lives only in `Directory.Build.props`** (`<Version>`). `scripts/build-release.ps1` and
+23. **The app version lives only in `Directory.Build.props`** (`<Version>`). `scripts/build-release.ps1` and
     the Release workflow read it from there.
-21. **Tags starting with `v` are app releases only.** Pushing `v1.2.0` runs `.github/workflows/release.yml`,
+24. **Tags starting with `v` are app releases only.** Pushing `v1.2.0` runs `.github/workflows/release.yml`,
     which fails unless the tag matches `<Version>`. Trainer zips use tags like `trainer-tournament-0.9.2`. The
     manifest tool refuses a Trainer tag that starts with `v`.
-22. **Never commit zips, exes or DLLs.** Trainer zips are GitHub Release assets only (`docs/RELEASING.md`
+25. **Never commit zips, exes or DLLs.** Trainer zips are GitHub Release assets only (`docs/RELEASING.md`
     explains why). `.gitignore` already excludes `bin/`, `obj/`, `release/` and `publish/`.
-23. **`TreatWarningsAsErrors` is on** in `Directory.Build.props`. Fix the warning. Don't suppress it with
+26. **`TreatWarningsAsErrors` is on** in `Directory.Build.props`. Fix the warning. Don't suppress it with
     `#pragma`, `NoWarn`, or by turning the setting off.
 
 ### Tests
 
-24. **The test project is a plain console runner with no packages.** Write a check as
+27. **The test project is a plain console runner with no packages.** Write a check as
     `Check("plain-English statement of what is true", condition, detailShownOnFailure)` inside a
     `Section(...)`. Prefix checks that guard a safety guarantee with `Invariant:`.
-25. **Tests never use the real network or real game files.** Use `FakeServer` (in `OnlineTests.cs`) for HTTP,
+28. **Tests never use the real network or real game files.** Use `FakeServer` (in `OnlineTests.cs`) for HTTP,
     and `FakeBinary.Pe(...)` / `FakeBinary.WriteRelease(...)` (in `Fixtures.cs`) for ReSkate binaries.
 
 ## Where things are
@@ -184,7 +198,9 @@ A self-update installs code, so it is held to a stricter standard than a Trainer
 | `src/ReSkateTrainerUpdater.Core/Advice.cs` | `Advice`, `Severity`, `UpdateContext`, `OnlineOffer`, `OfferKind` |
 | `src/ReSkateTrainerUpdater.Core/UpdaterSettings.cs` | `%AppData%\ReSkateTrainerUpdater\settings.json` |
 | `src/ReSkateTrainerUpdater/Ui/UpdaterForm.cs` | The window. Wiring and drawing a `HomeView`, nothing else. |
-| `src/ReSkateTrainerUpdater/Ui/Controls/` | The controls: `StatusCard`, `ActionTileControl` (the big tile), `InfoTile` (folder and zip), `OptionRow`, `SquareButton`, `HeaderBar` (chip and wordmark), `WindowButtons` (minimise and close) |
+| `src/ReSkateTrainerUpdater/Ui/Controls/` | The controls: `StatusCard`, `ActionTileControl` (the big tile), `InfoTile` (folder and zip), `OptionRow`, `SquareButton`, `HeaderBar` (the two top-left cards and the wordmark), `WindowButtons` (minimise and close) |
+| `src/ReSkateTrainerUpdater/Ui/Backdrop.cs` | The picture behind the window (an original dusk landscape painted in code) and `IBackdropHost` |
+| `src/ReSkateTrainerUpdater/Ui/AppImages.cs`, `Assets/os_uk.png` | The creator's profile picture on the credit card |
 | `src/ReSkateTrainerUpdater/Ui/NativeMethods.cs` | Window frame (rounded corners, border, shadow), dragging, dark scrollbars |
 | `src/ReSkateTrainerUpdater/Ui/Theme.cs` | The launcher's colours and fonts |
 | `src/ReSkateTrainerUpdater/Ui/GameFonts.cs`, `TextPaint.cs` | Loading the embedded fonts, and drawing text with them |
@@ -219,8 +235,13 @@ A self-update installs code, so it is held to a stricter standard than a Trainer
   "NO UPDATE". Users read a disappearing button as a bug, so don't remove it.
 - **There is no maximise button and the window can't be resized.** The launcher's window has the same two corner
   buttons. The layout is fixed, so a maximised window would just be a small app in a big black rectangle.
-- **The top-left chip shows GitHub's status, not a user name.** It is the equivalent of the launcher's "Welcome"
-  chip: green dot when `latest.json` was read, blue while checking, grey when it couldn't be reached.
+- **There are two cards at the top left.** The first is the creator credit ("Made by os_uk", with their profile
+  picture), the second is GitHub's status. The status card is the equivalent of the launcher's "Welcome" card: green dot
+  when `latest.json` was read, blue while checking, grey when it couldn't be reached. The credit text comes from
+  `UpdateAdvisor.DescribeCreator` and `AppCredits`.
+- **The status card is only as tall as its content**, like the launcher's, so the backup option under it moves up and
+  down as the text changes. `UpdaterForm.LayoutAll` re-places everything on every render.
+- **The background doesn't look like the launcher's photo.** On purpose: see rule 6.
 - **`ReSkateTrainerUpdater.exe.old` or `.new` may sit beside the exe for a moment after an update.** They are the
   previous version and a staged one. The new copy deletes them on start-up.
 - **UPDATE APP is shown before a Trainer update, and even before a folder is chosen.** The new version may improve

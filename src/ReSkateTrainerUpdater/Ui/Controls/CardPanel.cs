@@ -13,7 +13,7 @@ internal sealed class CardPanel : Panel
     {
         SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint |
                  ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
-        BackColor = Theme.Card;
+        BackColor = Theme.CardSolid;
     }
 
     protected override void OnPaint(PaintEventArgs e)
@@ -21,13 +21,13 @@ internal sealed class CardPanel : Panel
         var g = e.Graphics;
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
-        g.Clear(Theme.Card);
+        g.Clear(Theme.CardSolid);
 
         float scale = DeviceDpi / 96f;
         using (var brush = new SolidBrush(Theme.Accent))
         {
             g.FillRectangle(brush, 0, 0, 4 * scale, Height);
         }
-        TextPaint.Draw(g, Title, Theme.Title, new RectangleF(30 * scale, 22 * scale, Width - 60 * scale, 30 * scale), Theme.Text);
+        TextPaint.Draw(g, Title, Theme.Title, new RectangleF(22 * scale, 13 * scale, Width - 44 * scale, 32 * scale), Theme.Text);
     }
 }

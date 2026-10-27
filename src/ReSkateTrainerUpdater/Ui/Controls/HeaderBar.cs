@@ -5,88 +5,108 @@ using ReSkateTrainerUpdater.Ui;
 namespace ReSkateTrainerUpdater.Ui.Controls;
 
 /// <summary>
-/// The top-left of the window, as in the launcher: a small chip with the app icon, a status dot and two lines of text
-/// (the launcher's says "Welcome"), and under it the name in big, slightly tilted marker-pen lettering with a shadow.
+/// The top-left of the window, as in the launcher. A row of two small cards, each a square picture and a block of two
+/// lines of text, like the launcher's "Welcome" card: the creator's credit (with their profile picture) and the GitHub
+/// status (with the app icon and a status dot). Under them is the name in big, slightly tilted marker-pen lettering.
 /// </summary>
 internal sealed class HeaderBar : BufferedControl
 {
-    private Bitmap? _logo;
-    private int _logoSize;
-    private ChipView _chip = new("", "", Severity.Neutral);
+    // Measurements in 96-dpi pixels, from the launcher's "Welcome" card.
+    private const float PictureSize = 46f;
+    private const float TextBlockWidth = 254f;
+    private const float TextBlockHeight = 40f;
+    private const float ChipGap = 16f;
 
-    public void SetChip(ChipView chip)
+    private Bitmap? _appIcon;
+    private int _appIconSize;
+    private ChipView _creator = new("", "", Severity.Neutral, ShowDot: false);
+    private ChipView _status = new("", "", Severity.Neutral);
+
+    public void SetCreator(ChipView chip)
     {
-        _chip = chip;
+        _creator = chip;
+        Invalidate();
+    }
+
+    public void SetStatus(ChipView chip)
+    {
+        _status = chip;
         Invalidate();
     }
 
     protected override void OnPaint(PaintEventArgs e)
     {
         var g = Prepare(e);
+        g.InterpolationMode = InterpolationMode.HighQualityBicubic;
 
-        // The chip: icon square, text block, and a status dot over the icon's corner.
-        int size = (int)S(46);
-        float top = S(4);
-        if (_logo == null || _logoSize != size)
-        {
-            _logo?.Dispose();
-            _logo = AppIcon.Render(size);
-            _logoSize = size;
-        }
+        float chipWidth = S(PictureSize + TextBlockWidth);
+        int picture = (int)S(PictureSize);
 
-        var logoRect = new RectangleF(0, top, size, size);
-        if (_logo != null)
-        {
-            g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-            g.DrawImage(_logo, logoRect);
-        }
-        else
-        {
-            using var brush = new SolidBrush(Theme.Accent);
-            g.FillRectangle(brush, logoRect);
-        }
+        // The creator card, with the creator's own picture.
+        DrawChip(g, 0, _creator, AppImages.Profile);
 
-        float textHeight = S(40);
-        var textBlock = new RectangleF(size, top + (size - textHeight) / 2f, S(268), textHeight);
-        using (var brush = new SolidBrush(Theme.Chip))
+        // The status card, with the app icon.
+        if (_appIcon == null || _appIconSize != picture)
         {
-            g.FillRectangle(brush, textBlock);
+            _appIcon?.Dispose();
+            _appIcon = AppIcon.Render(picture);
+            _appIconSize = picture;
         }
-        float tx = textBlock.Left + S(14);
-        float tw = textBlock.Width - S(22);
-        TextPaint.Draw(g, _chip.Title, Theme.Strong, new RectangleF(tx, textBlock.Top + S(2), tw, S(20)), Theme.Text, HAlign.Left, VAlign.Middle);
-        TextPaint.Draw(g, _chip.Subtitle, Theme.Small, new RectangleF(tx, textBlock.Top + S(19), tw, S(18)), Theme.Muted, HAlign.Left, VAlign.Middle);
-
-        float dot = S(10);
-        var dotColour = _chip.Severity switch
-        {
-            Severity.Good => Theme.Success,
-            Severity.Working => Theme.Accent,
-            _ => Theme.Faint,
-        };
-        using (var ring = new SolidBrush(Theme.Bg))
-        using (var brush = new SolidBrush(dotColour))
-        {
-            g.FillEllipse(ring, S(2) - S(2), top - S(4) - S(2), dot + S(4), dot + S(4));
-            g.FillEllipse(brush, S(2), top - S(4), dot, dot);
-        }
+        DrawChip(g, chipWidth + S(ChipGap), _status, _appIcon);
 
         // The wordmark: tilted a little, with a soft shadow, like the launcher's.
         var state = g.Save();
-        float baseline = top + size + S(8);
-        float wordHeight = S(64);
-        g.TranslateTransform(S(8), baseline + wordHeight / 2f);
+        float wordHeight = S(80);
+        float top = S(PictureSize) + S(22);
+        g.TranslateTransform(S(8), top + wordHeight / 2f);
         g.RotateTransform(-3.5f);
-        string name = "TRAINER UPDATER";
+        const string name = "TRAINER UPDATER";
         var rect = new RectangleF(0, -wordHeight / 2f, Width, wordHeight);
         TextPaint.Draw(g, name, Theme.Wordmark, new RectangleF(rect.X + S(2), rect.Y + S(3), rect.Width, rect.Height), Color.FromArgb(150, 0, 0, 0));
         TextPaint.Draw(g, name, Theme.Wordmark, rect, Theme.Text);
         g.Restore(state);
     }
 
+    // One card: a square picture on the left, a block of text beside it, and (for a status) a dot on the picture's corner.
+    private void DrawChip(Graphics g, float x, ChipView chip, Image? picture)
+    {
+        float size = S(PictureSize);
+        var pictureRect = new RectangleF(x, 0, size, size);
+        if (picture != null)
+        {
+            g.DrawImage(picture, pictureRect);
+        }
+        else
+        {
+            using var brush = new SolidBrush(Theme.Control);
+            g.FillRectangle(brush, pictureRect);
+        }
+
+        var block = new RectangleF(x + size, (size - S(TextBlockHeight)) / 2f, S(TextBlockWidth), S(TextBlockHeight));
+        using (var brush = new SolidBrush(Theme.Chip))
+        {
+            g.FillRectangle(brush, block);
+        }
+        float textX = block.Left + S(12);
+        float textWidth = block.Width - S(20);
+        TextPaint.Draw(g, chip.Title, Theme.ChipTitle, new RectangleF(textX, block.Top + S(1), textWidth, S(21)), Theme.Text);
+        TextPaint.Draw(g, chip.Subtitle, Theme.Small, new RectangleF(textX, block.Top + S(19), textWidth, S(19)), Theme.Muted);
+
+        if (!chip.ShowDot) return;
+        var dotColour = chip.Severity switch
+        {
+            Severity.Good => Theme.Success,
+            Severity.Working => Theme.Accent,
+            _ => Theme.Faint,
+        };
+        float dot = S(10);
+        using var dotBrush = new SolidBrush(dotColour);
+        g.FillEllipse(dotBrush, x - S(2), -S(2), dot, dot);
+    }
+
     protected override void Dispose(bool disposing)
     {
-        if (disposing) _logo?.Dispose();
+        if (disposing) _appIcon?.Dispose();
         base.Dispose(disposing);
     }
 }

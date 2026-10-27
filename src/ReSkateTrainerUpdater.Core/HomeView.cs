@@ -85,7 +85,15 @@ public sealed record HomeView(
 /// <param name="Title">For example "Connected to GitHub".</param>
 /// <param name="Subtitle">For example "v1.1.2 · Unofficial helper".</param>
 /// <param name="Severity">Colours the dot: green when connected, grey when not.</param>
-public sealed record ChipView(string Title, string Subtitle, Severity Severity);
+/// <param name="ShowDot">False for a chip that isn't about a status, such as the creator credit.</param>
+public sealed record ChipView(string Title, string Subtitle, Severity Severity, bool ShowDot = true);
+
+/// <summary>Who made this tool. Shown on the card in the top-left corner.</summary>
+public static class AppCredits
+{
+    /// <summary>The creator's handle.</summary>
+    public const string CreatorHandle = "os_uk";
+}
 
 /// <summary>What the app is busy doing, for <see cref="UpdateAdvisor.DescribeBusy"/>.</summary>
 public enum BusyStage

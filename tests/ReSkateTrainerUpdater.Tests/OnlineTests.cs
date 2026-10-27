@@ -299,7 +299,11 @@ internal static class OnlineTests
         views.Add(unreadable);
         Check("A zip that couldn't be opened shows why", unreadable is { Pill: "PROBLEM", Headline: "Couldn't read that zip", Subline: "It's damaged." });
 
-        Section("Top-left chip");
+        Section("Top-left chips");
+        var credit = UpdateAdvisor.DescribeCreator();
+        Check("The credit card names the creator and has no status dot",
+            credit is { Title: "Made by os_uk", Subtitle: "Creator of this tool", ShowDot: false }, credit.Title);
+        Check("The status chip does show its dot", UpdateAdvisor.DescribeConnection(OnlineStatus.Reachable, "1.2.3").ShowDot);
         var online = UpdateAdvisor.DescribeConnection(OnlineStatus.Reachable, "1.2.3");
         Check("Connected shows a green dot and the app version",
             online is { Title: "Connected to GitHub", Subtitle: "v1.2.3 · Unofficial helper", Severity: Severity.Good }, online.Subtitle);
