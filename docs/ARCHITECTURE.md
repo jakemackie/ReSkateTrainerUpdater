@@ -142,6 +142,29 @@ big tile clicked (INSTALL or UPDATE) ──► TrainerDownloader.DownloadAsync(e
 
 The online route adds checks in front of the normal install and replaces none of them.
 
+## The installer
+
+Players install the app with `ReSkateTrainerUpdater-Setup-<version>.exe`, built by Inno Setup from
+`installer/ReSkateTrainerUpdater.iss`. It is a normal Windows installer, shaped by one constraint: the app updates itself by
+renaming its exe, so the folder it lives in must be writable without administrator rights.
+
+- **Per-user.** `PrivilegesRequired=lowest` installs into `%LocalAppData%\Programs\ReSkate Trainer Updater`. It never asks
+  for administrator rights and can't be switched to an all-users install.
+- **What it creates.** The exe and `THIRD-PARTY-NOTICES.md`, a Start Menu entry (and an optional desktop shortcut), an
+  uninstaller, and an Add/Remove Programs entry under HKCU, filed under the app's permanent identity (`AppId`).
+- **Upgrades.** Running a newer setup finds the old install by `AppId`, closes the app if it is running, and replaces it.
+- **Self-update and the installer.** The app updates itself from the portable zip, in place, in the install folder. The
+  setup's Add/Remove Programs entry would then show the old version, so on start-up `InstallRegistration.SyncVersion`
+  rewrites its version, but only if the entry's `InstallLocation` is the folder the running exe is in. A portable copy
+  elsewhere never touches it.
+- **Uninstall.** Removes the files, shortcuts and the entry, and the `.old` and `.new` files a self-update leaves. A silent
+  uninstall keeps the saved settings (`%AppData%\ReSkateTrainerUpdater`). An interactive one asks.
+- **Not code-signed.** Windows shows "Unknown publisher" for the setup and the exe.
+
+`scripts/build-release.ps1` builds the exe, the zip and the setup from one version number, and the CI and Release workflows
+both run it, so a broken installer fails CI long before a release. The wizard pictures are drawn by
+`installer/make-wizard-images.ps1` from the app's own icon and fonts.
+
 ## Updating the app itself
 
 `AppUpdater` replaces the running exe with a newer one. A running exe can be renamed but not overwritten, which

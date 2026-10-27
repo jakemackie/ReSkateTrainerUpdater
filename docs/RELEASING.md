@@ -10,6 +10,17 @@ This repository publishes two different things. Keep them apart.
 A tag starting with `v` always starts the app's Release workflow. Never use one for a Trainer zip. The manifest
 tool refuses it.
 
+## What a release contains
+
+| File | For | Notes |
+| --- | --- | --- |
+| `ReSkateTrainerUpdater-Setup-<version>.exe` | People installing the app | Installs for the current user (no administrator), adds a Start Menu entry and an uninstaller |
+| `ReSkateTrainerUpdater-<version>.zip` | The app's own self-update, and anyone who wants the portable exe | `latest.json` points at this one. Don't remove it |
+
+The Release workflow builds both with `scripts/build-release.ps1` and puts a "download the Setup" line at the top of the
+release notes. Building the setup needs Inno Setup 6, which GitHub's Windows runners already have. To build locally:
+`winget install JRSoftware.InnoSetup`, then run the script (or add `-SkipInstaller` to skip the setup).
+
 ## One-time setup
 
 1. **Turn on two-factor authentication** for the GitHub account that owns the repository. Anyone who can push to
@@ -32,8 +43,8 @@ tool refuses it.
    ```
 
 4. Watch the **Release** workflow in the Actions tab. It checks that the tag matches `<Version>`, runs the
-   tests, builds the single-file exe, zips it together with `THIRD-PARTY-NOTICES.md` (the font licences), and
-   creates the GitHub Release with that zip attached, marked Latest.
+   tests, builds the single-file exe, zips it together with `THIRD-PARTY-NOTICES.md` (the font licences), builds the
+   setup program, and creates the GitHub Release with the setup and the zip attached, marked Latest.
 5. The same workflow then **records the release in `latest.json`** so that installed copies can update themselves.
    It takes main's `latest.json`, runs `set-app` (which refuses a zip that isn't this version's genuine exe), runs
    `verify` (which downloads the published zip and checks it), and commits the result to `main` as

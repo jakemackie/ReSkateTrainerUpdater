@@ -98,7 +98,8 @@ internal sealed class StatusCard : BufferedControl
         TextPaint.Draw(g, "STATUS", Theme.Title, new RectangleF(pad, S(TitleCenter) - S(16), right - pad, S(32)), Theme.Text);
         string pillText = view.Pill;
         int pillWidth = PillWidth(g, pillText);
-        var pillColour = view.Severity == Severity.Neutral ? Color.FromArgb(70, 72, 80) : Theme.ForSeverity(view.Severity);
+        // Pill text is black, so the fill has to be a bright colour. Neutral is a light grey rather than a dark one.
+        var pillColour = view.Severity == Severity.Neutral ? Theme.Muted : Theme.ForSeverity(view.Severity);
         DrawPill(g, (int)(right - pillWidth), (int)(S(TitleCenter) - S(10.5f)), pillText, pillColour);
 
         // Headline.

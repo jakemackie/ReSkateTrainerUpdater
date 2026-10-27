@@ -40,7 +40,8 @@ Run every command from the repository root. You need the .NET 8 SDK.
 | Verify `latest.json` against GitHub | `dotnet run --project tools/ReSkateTrainerUpdater.ManifestTool -- verify` | Windows only, needs internet |
 | Add a Trainer zip to `latest.json` | `dotnet run --project tools/ReSkateTrainerUpdater.ManifestTool -- add <zip>` | Windows only |
 | Record an app release in `latest.json` | `dotnet run --project tools/ReSkateTrainerUpdater.ManifestTool -- set-app <zip>` | Windows only. The Release workflow runs it. |
-| Build the release exe and zip | `powershell -ExecutionPolicy Bypass -File .\scripts\build-release.ps1` | Windows only |
+| Build the release files (portable exe, zip and setup) | `powershell -ExecutionPolicy Bypass -File .\scripts\build-release.ps1` | Windows only, needs Inno Setup 6 (`winget install JRSoftware.InnoSetup`) |
+| Same, without the setup | `... build-release.ps1 -SkipInstaller` | Windows only |
 
 The tests print one `pass` or `FAIL` line per check and end with `All N checks passed.` The exit code is non-zero
 if any check fails. A change is not finished until the build has no warnings and every check passes.
@@ -75,8 +76,8 @@ weakens the download checks, or breaks the release process.
    colour in a control.
 5. **The look is the ReSkate launcher's.** Flat, square-cornered dark cards that are a little see-through, over a
    backdrop. One bright blue, one green, sampled from the launcher and kept in `Theme`. Montserrat for text, and
-   Permanent Marker only for the big headings (the wordmark and the action tile). Status is shown with filled pills
-   (`BufferedControl.DrawPill`) and round icons (`DrawStatusIcon`), never with tiny coloured text. Don't add rounded
+   Permanent Marker only for the big headings (the wordmark and the action tile). Status is shown with filled pills with black text, as in the launcher
+   (`BufferedControl.DrawPill`; never white text, never a dark fill) and round icons (`DrawStatusIcon`), never with tiny coloured text. Don't add rounded
    cards, gradients on cards, or drop shadows. Sizes and gaps come from measurements of the launcher at its default
    size of 1440 by 840 (60 from the left, 64 from the right, 56 from the bottom, 16 between tiles). Keep them.
 6. **The backdrop is the launcher's photo, with a painted fallback.** `Backdrop` draws `Assets/background.jpg`, the
@@ -136,6 +137,25 @@ weakens the download checks, or breaks the release process.
 19. **No telemetry.** The app sends two kinds of request only: a GET for `latest.json` on start-up, and a GET
     for one zip (a Trainer, or a new version of the app) when the user clicks the big tile. The only header added is the User-Agent
     `ReSkateTrainerUpdater/<version>`. Don't add analytics, IDs, crash reporting, or anything else.
+
+### The installer
+
+The app is also shipped as `ReSkateTrainerUpdater-Setup-<version>.exe`, built by Inno Setup from
+`installer/ReSkateTrainerUpdater.iss`. `InstallerScriptTests.cs` guards the rules below.
+
+- **It installs for the current user only, never as administrator.** `PrivilegesRequired=lowest`, into the per-user
+  programs folder. Self-update swaps the exe in its own folder, and `C:\Program Files` isn't writable without admin
+  rights. Don't add `PrivilegesRequiredOverridesAllowed` or install anywhere else.
+- **`AppId` never changes.** It is how a newer setup finds and replaces an older install, and how the app finds its own
+  Add/Remove Programs entry (`AppInfo.InstallerAppId`, used by `InstallRegistration`). The two must match.
+- **The portable zip stays a release asset.** Self-update downloads `ReSkateTrainerUpdater-<version>.zip`, not the
+  setup. A release has both, and the workflow builds both from one `build-release.ps1` run.
+- **The app keeps its Add/Remove Programs version right.** After a self-update the setup's entry would show the old
+  version, so `InstallRegistration.SyncVersion` fixes it, but only for the copy that lives in the install folder.
+- **The uninstaller removes `.old` and `.new` files** that a self-update leaves, and keeps the user's settings on a
+  silent uninstall (it asks otherwise).
+- **The wizard pictures are generated** by `installer/make-wizard-images.ps1` and committed. Re-run it to change them.
+- **The setup isn't code-signed**, so Windows shows an "Unknown publisher" warning. Say so; don't claim it is signed.
 
 ### Updating the app itself
 
@@ -206,6 +226,8 @@ A self-update installs code, so it is held to a stricter standard than a Trainer
 | `src/ReSkateTrainerUpdater/Ui/Controls/` | The controls: `StatusCard`, `ActionTileControl` (the big tile), `InfoTile` (folder and zip), `OptionRow`, `SquareButton`, `HeaderBar` (the two top-left cards and the wordmark), `WindowButtons` (minimise and close) |
 | `src/ReSkateTrainerUpdater/Ui/Backdrop.cs` | The picture behind the window (an original dusk landscape painted in code) and `IBackdropHost` |
 | `src/ReSkateTrainerUpdater/Ui/AppImages.cs`, `Assets/os_uk.png` | The creator's profile picture on the credit card |
+| `installer/` | The setup program: `ReSkateTrainerUpdater.iss` (Inno Setup script) and its wizard pictures |
+| `src/ReSkateTrainerUpdater/Ui/InstallRegistration.cs` | Keeps the setup's Add/Remove Programs entry showing the running version |
 | `src/ReSkateTrainerUpdater/Ui/NativeMethods.cs` | Window frame (rounded corners, border, shadow), dragging, dark scrollbars |
 | `src/ReSkateTrainerUpdater/Ui/Theme.cs` | The launcher's colours and fonts |
 | `src/ReSkateTrainerUpdater/Ui/GameFonts.cs`, `TextPaint.cs` | Loading the embedded fonts, and drawing text with them |
@@ -262,6 +284,9 @@ A self-update installs code, so it is held to a stricter standard than a Trainer
   app does not offer it. Bump the version to ship a new build.
 - **A zip dropped by hand is not checked against `latest.json`.** The offline route trusts the user's file and
   only runs the normal package validation.
+- **A release has two downloads that look similar.** `ReSkateTrainerUpdater-Setup-<version>.exe` is the installer people
+  are told to use. `ReSkateTrainerUpdater-<version>.zip` is the portable exe, which the app itself downloads to
+  update. Both are needed.
 - **`dotnet publish` leaves five `*_cor3.dll` files next to the exe** (D3DCompiler, PenImc, PresentationNative,
   vcruntime140, wpfgfx). They are WPF native files that this WinForms app never loads. `build-release.ps1`
   correctly zips only the exe, and the lone exe was confirmed to run. Don't add them to the zip.

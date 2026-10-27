@@ -21,6 +21,12 @@ jobs:
       - name: Test
         run: dotnet run --project tests/ReSkateTrainerUpdater.Tests -c Release --no-build
 
+      # Builds the portable zip and the setup program exactly as a release does, so a broken installer is caught here
+      # and not on release day. (GitHub's Windows images include Inno Setup.)
+      - name: Build the release files
+        shell: pwsh
+        run: ./scripts/build-release.ps1
+
       # Downloads every zip latest.json lists, exactly as the app would, and checks size, SHA-256, version,
       # edition and build. Fails if latest.json points at a Release asset that doesn't exist or doesn't match.
       - name: Verify latest.json against the published Trainer zips

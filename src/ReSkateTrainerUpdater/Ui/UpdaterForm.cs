@@ -144,6 +144,9 @@ internal sealed class UpdaterForm : Form, IBackdropHost
         if (Environment.ProcessPath is { } exePath && AppUpdater.CanUpdateInPlace(exePath))
             _ = Task.Run(() => AppUpdater.CleanUpLeftovers(exePath));
 
+        // If the setup installed this copy, keep its Add/Remove Programs entry showing the version that is really running.
+        _ = Task.Run(() => InstallRegistration.SyncVersion(_version));
+
         // One quiet request for latest.json. Any failure just leaves the screen as it would be offline.
         _ = CheckOnlineAsync();
 

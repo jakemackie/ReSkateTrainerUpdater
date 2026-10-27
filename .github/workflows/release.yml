@@ -30,7 +30,18 @@ jobs:
       - name: Test
         run: dotnet run --project tests/ReSkateTrainerUpdater.Tests -c Release
 
-      - name: Build the release zip
+      # GitHub's Windows images include Inno Setup, which builds the setup program. Install it if that ever changes.
+      - name: Make sure Inno Setup is installed
+        shell: pwsh
+        run: |
+          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          if (Test-Path $iscc) { Write-Host "Inno Setup found: $iscc" }
+          else {
+            choco install innosetup --no-progress -y
+            if ($LASTEXITCODE -ne 0) { throw 'Could not install Inno Setup' }
+          }
+
+      - name: Build the release files (the portable zip and the setup program)
         shell: pwsh
         run: ./scripts/build-release.ps1
 
@@ -40,7 +51,12 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${{ github.ref_name }}" (Get-ChildItem release/*.zip) --title "ReSkate Trainer Updater ${{ github.ref_name }}" --generate-notes --latest
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart('v')
+          $notes = "**To install it, download ReSkateTrainerUpdater-Setup-$version.exe below and run it.** It installs for you only (no administrator needed), adds a Start Menu entry, and keeps itself up to date from then on. Windows may say the publisher is unknown, because the setup isn't code-signed: choose More info, then Run anyway. The .zip is the portable exe with no installer, and it is also what the app downloads to update itself."
+          $files = @(Get-ChildItem "release/ReSkateTrainerUpdater-$version.zip") + @(Get-ChildItem "release/ReSkateTrainerUpdater-Setup-$version.exe")
+          gh release create "${{ github.ref_name }}" $files --title "ReSkate Trainer Updater ${{ github.ref_name }}" --notes $notes --generate-notes --latest
+          if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }
 
       # Tells every installed copy of the app that this version exists, so they can update themselves with one click.
       # latest.json lives on main, so this takes main's copy, records this release in it, runs the same checks the app

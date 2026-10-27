@@ -8,3 +8,7 @@
 # Never touch binary files.
 *.ico binary
 *.png binary
+*.bmp binary
+*.jpg binary
+*.jpeg binary
+*.ttf binary

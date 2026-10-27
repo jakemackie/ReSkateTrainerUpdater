@@ -18,6 +18,7 @@ AdvisorTests.Run(workspace);
 SettingsTests.Run(workspace);
 OnlineTests.Run(workspace);
 AppUpdateTests.Run(workspace);
+InstallerScriptTests.Run();
 
 Console.WriteLine();
 Console.WriteLine(TestKit.Failures == 0

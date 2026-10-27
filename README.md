@@ -8,17 +8,17 @@ This is an unofficial helper. It isn't made by, or affiliated with, the ReSkate 
 
 ## Using it
 
-1. Download `ReSkateTrainerUpdater-<version>.zip` from the [latest release](../../releases/latest) and unzip it. The exe needs no installation.
+1. Download `ReSkateTrainerUpdater-Setup-<version>.exe` from the [latest release](../../releases/latest) and run it. It installs the updater for you only (no administrator needed), adds it to your Start Menu, and lists it under Settings, Apps, where you can uninstall it. Prefer no installer? The `.zip` on the same page is the portable exe: unzip it anywhere you can write to.
 2. Close the game and the ReSkate launcher.
 3. Choose your ReSkate folder, the one with `ReSkateLauncher.exe`. The app remembers it for next time.
 4. Click the big blue tile. It says **UPDATE** when a newer Trainer is published, or **INSTALL** for an empty folder. When you're current it goes dark and says **UP TO DATE**.
 5. Start `ReSkateLauncher.exe` as usual.
 
-**The updater updates itself.** When a new version of this app is published, the big tile says **UPDATE APP**. One click downloads it, checks it, swaps it in and restarts. You only ever download the app by hand once. If it says it can't replace itself, the app is in a folder you can't write to (such as `Program Files`): move it to your Desktop or another folder you own.
+**The updater updates itself.** When a new version of this app is published, the big tile says **UPDATE APP**. One click downloads it, checks it, swaps it in and restarts. You only ever download or install the app once. If it says it can't replace itself, the portable exe is in a folder you can't write to (such as `Program Files`): move it to your Desktop or another folder you own, or use the setup, which installs somewhere that always works.
 
 **Offline, or a different version:** drop a ReSkate Trainer zip onto the window (or click the zip tile to browse), then click the **INSTALL** tile. A zip inside a zip, or one wrapped in a folder, is fine.
 
-Windows may show an "Unknown publisher" SmartScreen warning because the exe isn't code-signed. Choose **More info**, then **Run anyway**.
+Windows may show an "Unknown publisher" SmartScreen warning because the setup and the exe aren't code-signed. Choose **More info**, then **Run anyway**.
 
 ## What it checks
 

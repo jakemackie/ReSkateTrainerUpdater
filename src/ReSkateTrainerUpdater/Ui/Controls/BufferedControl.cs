@@ -64,8 +64,8 @@ internal abstract class BufferedControl : Control
     }
 
     /// <summary>
-    /// Draws a pill: a fully rounded capsule filled with <paramref name="fill"/> and a short upper-case word in white,
-    /// like the READY pill in the launcher. Returns where it was drawn.
+    /// Draws a pill: a fully rounded capsule filled with <paramref name="fill"/> and a short upper-case word in black,
+    /// like the READY pill in the launcher (whose text is pure black on its green). Returns where it was drawn.
     /// </summary>
     protected Rectangle DrawPill(Graphics g, int x, int y, string text, Color fill)
     {
@@ -77,7 +77,7 @@ internal abstract class BufferedControl : Control
         {
             g.FillPath(brush, path);
         }
-        TextPaint.Draw(g, text, Theme.Pill, rect, Color.White, HAlign.Center, VAlign.Middle);
+        TextPaint.Draw(g, text, Theme.Pill, rect, Color.Black, HAlign.Center, VAlign.Middle);
         return rect;
     }
 
