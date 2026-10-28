@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
   "app": {
-    "version": "1.4.1",
-    "url": "https://github.com/jakemackie/ReSkateTrainerUpdater/releases/download/v1.4.1/ReSkateTrainerUpdater-1.4.1.zip",
-    "sizeBytes": 63783348,
-    "sha256": "f31d2d28b7ee29d73a7255675509ce5b1c4b2b11249fe5868e2294b958bd623a",
+    "version": "1.5.0",
+    "url": "https://github.com/jakemackie/ReSkateTrainerUpdater/releases/download/v1.5.0/ReSkateTrainerUpdater-1.5.0.zip",
+    "sizeBytes": 63795831,
+    "sha256": "65e09cc89fc5f4599f95962503868d857215fe3b64b20437c59b5f8dbc9ac1e7",
     "published": "2026-10-28",
-    "notes": "PLAY is always the big button; a new Trainer is explained in an Update available dialog"
+    "notes": "Signed update list, resumes interrupted downloads, winget and Scoop installs"
   },
   "editions": {
     "tournament": {
@@ -18,5 +18,5 @@
       "sha256": "737af3e3bdd83687c4bb32242794655aa46dac5f7574f0f7eeeacfbe4cc75619"
     }
   },
-  "signature": "Eqai2CGFDbBnPL9x7wOWkGuT+koBwsm5GEQucEGVSvYsIgl8fmhSZWNUUBKWYK+WEIK76h1iAnItRxkWDFs18Q=="
+  "signature": "FSspFoxfatmmpM75peP4+Taj08LgwYBGFnCMlgu475xL3B3ROhf+uP1SdmmNkRAjPuHXFEraRSf2yLwpzlKpUQ=="
 }
