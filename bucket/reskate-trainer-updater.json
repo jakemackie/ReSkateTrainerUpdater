@@ -1,12 +1,12 @@
 {
-    "version": "1.5.0",
+    "version": "1.5.1",
     "description": "Installs and updates the ReSkate Trainer in your ReSkate folder (unofficial helper).",
     "homepage": "https://github.com/jakemackie/ReSkateTrainerUpdater",
     "license": "MIT",
     "architecture": {
         "64bit": {
-            "url": "https://github.com/jakemackie/ReSkateTrainerUpdater/releases/download/v1.5.0/ReSkateTrainerUpdater-1.5.0.zip",
-            "hash": "65e09cc89fc5f4599f95962503868d857215fe3b64b20437c59b5f8dbc9ac1e7"
+            "url": "https://github.com/jakemackie/ReSkateTrainerUpdater/releases/download/v1.5.1/ReSkateTrainerUpdater-1.5.1.zip",
+            "hash": "63239d2a228c39a0d0c2216d4b984fa59e94f9a8ee671bb95debec1a243cc447"
         }
     },
     "shortcuts": [
