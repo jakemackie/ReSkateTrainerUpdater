@@ -236,6 +236,7 @@ A self-update installs code, so it is held to a stricter standard than a Trainer
 | `src/ReSkateTrainerUpdater.Core/ManifestSignature.cs` | The signature on `latest.json`: trusted public keys, `Sign`, `Verify`, key generation |
 | `src/ReSkateTrainerUpdater/SelfTest.cs` | `--self-test`: builds the window out of sight and checks the risky parts. The build script runs it. |
 | `bucket/reskate-trainer-updater.json`, `scripts/make-package-manifests.ps1` | The Scoop manifest, and the script that updates it and writes the winget manifest |
+| `.github/workflows/`, `.github/actions/dotnet-8/`, `global.json` | CI (parallel jobs), Release, and the weekly manifest check. The composite action uses the runner's .NET 8 SDK instead of installing one. `global.json` pins SDK 8. |
 | `LICENSE`, `.github/ISSUE_TEMPLATE/` | The MIT licence, and the issue templates (`problem.md` must match what "Report a problem" prefills) |
 | `src/ReSkateTrainerUpdater.Core/TrainerDownloader.cs` | The HTTP client, fetching `latest.json`, downloading and checking a zip, and `CheckPackageMatches` |
 | `src/ReSkateTrainerUpdater.Core/TrainerPackageLoader.cs` | Unpacking a zip (nested zips, wrapper folders) and validating it |

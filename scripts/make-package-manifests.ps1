@@ -52,13 +52,20 @@ finally {
 }
 
 # ---------- Scoop ----------
-$bucketFile = Join-Path $repoRoot 'bucket\reskate-trainer-updater.json'
-$bucket = Get-Content $bucketFile -Raw | ConvertFrom-Json
-$bucket.version = $Version
-$bucket.architecture.'64bit'.url  = "$base/$zipName"
-$bucket.architecture.'64bit'.hash = $hashes[$zipName].ToLowerInvariant()
-$json = ($bucket | ConvertTo-Json -Depth 10) -replace "`r`n", "`n"
-[IO.File]::WriteAllText($bucketFile, $json + "`n", (New-Object Text.UTF8Encoding($false)))
+$bucketFile = Join-Path $repoRoot 'bucketeskate-trainer-updater.json'
+# Edit the three values in place rather than re-writing the file, so its layout stays exactly as it is committed.
+# (ConvertTo-Json in Windows PowerShell 5.1 re-indents everything in its own odd style.)
+$text = [IO.File]::ReadAllText($bucketFile)
+function Set-FirstValue([string]$text, [string]$key, [string]$value) {
+    $pattern = '(?m)^(\s*"' + $key + '":\s*")[^"]*(")'
+    $re = [regex]$pattern
+    if (-not $re.IsMatch($text)) { throw "Scoop manifest has no `"$key`" to update" }
+    return $re.Replace($text, { param($m) $m.Groups[1].Value + $value + $m.Groups[2].Value }, 1)
+}
+$text = Set-FirstValue $text 'version' $Version
+$text = Set-FirstValue $text 'url'     "$base/$zipName"      # the first url is the download; autoupdate's comes after it
+$text = Set-FirstValue $text 'hash'    $hashes[$zipName].ToLowerInvariant()
+[IO.File]::WriteAllText($bucketFile, $text, (New-Object Text.UTF8Encoding($false)))
 Write-Host "Updated $bucketFile"
 
 # ---------- winget ----------

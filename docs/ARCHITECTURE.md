@@ -202,7 +202,14 @@ renaming its exe, so the folder it lives in must be writable without administrat
 - **Not code-signed.** Windows shows "Unknown publisher" for the setup and the exe.
 
 `scripts/build-release.ps1` builds the exe, the zip and the setup from one version number, and the CI and Release workflows
-both run it, so a broken installer fails CI long before a release. The wizard pictures are drawn by
+both run it, so a broken installer fails CI long before a release.
+
+The workflows are built to be quick. CI runs its jobs side by side (`test`, `package`), cancels a run when a newer push
+arrives, and does not install the .NET SDK because GitHub's runner image already has one (`.github/actions/dotnet-8`
+installs it only if the image ever loses it; `global.json` keeps every machine on SDK 8). Downloading every published zip
+to check it (`verify`) is its own workflow, run when `latest.json` changes and weekly. Windows runners are needed for the
+app, the installer and `verify`; the `linux-tests` job is an experiment to see whether the tests could run on a faster,
+cheaper Linux runner instead. The wizard pictures are drawn by
 `installer/make-wizard-images.ps1` from the app's own icon and fonts.
 
 ## Updating the app itself
