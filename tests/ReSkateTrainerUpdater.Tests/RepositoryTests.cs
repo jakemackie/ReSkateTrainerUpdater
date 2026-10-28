@@ -18,7 +18,7 @@ internal static class RepositoryTests
             return;
         }
 
-        string Read(string relative) => File.ReadAllText(Path.Combine(root, relative));
+        string Read(string relative) => File.ReadAllText(Path.Combine(root, relative.Replace('\\', Path.DirectorySeparatorChar)));
 
         var license = Read("LICENSE");
         Check("The repository has an MIT licence naming a copyright holder",

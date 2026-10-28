@@ -20,7 +20,7 @@ internal static class InstallerScriptTests
             return;
         }
 
-        string Read(string relative) => File.ReadAllText(Path.Combine(root, relative));
+        string Read(string relative) => File.ReadAllText(Path.Combine(root, relative.Replace('\\', Path.DirectorySeparatorChar)));
         var script = Read(@"installer\ReSkateTrainerUpdater.iss");
         var appInfo = Read(@"src\ReSkateTrainerUpdater\Ui\AppInfo.cs");
         var release = Read(@".github\workflows\release.yml");
@@ -86,7 +86,7 @@ internal static class InstallerScriptTests
             !Read(@".github\workflows\ci.yml").Contains("-- verify", StringComparison.Ordinal) &&
             Read(".github/workflows/verify-manifest.yml").Contains("-- verify", StringComparison.Ordinal));
 
-        Check("The wizard pictures exist", File.Exists(Path.Combine(root, @"installer\wizard-large.bmp")) && File.Exists(Path.Combine(root, @"installer\wizard-small.bmp")));
+        Check("The wizard pictures exist", File.Exists(Path.Combine(root, "installer", "wizard-large.bmp")) && File.Exists(Path.Combine(root, "installer", "wizard-small.bmp")));
     }
 
     private static string? FindRepoRoot()
