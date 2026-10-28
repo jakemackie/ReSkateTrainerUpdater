@@ -11,7 +11,44 @@
     <Product>ReSkate Trainer Updater</Product>
     <Description>Installs the newest ReSkate Trainer into your ReSkate folder.</Description>
     <ApplicationIcon>Assets\ReSkateTrainerUpdater.ico</ApplicationIcon>
+    <!-- Only SelfTest uses it, to call the window's drop target through its vtable the way Explorer does. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
+
+  <!-- The self-contained exe carries the whole Windows Desktop runtime, and most of it is WPF, which this WinForms app never
+       uses. These files are left out of the release, whole: no code inside the files that stay is changed (unlike trimming).
+       Each one is something nothing the app runs refers to; the exe's self-test loads every assembly the app refers to,
+       directly or through the framework, and fails if one is missing. Small facade assemblies stay, because old type names
+       can be resolved through them by name. Don't add an assembly that WinForms, System.Drawing or the app references. -->
+  <ItemGroup>
+    <!-- WPF, its themes and native parts, and WPF-only UI Automation. WinForms has its own accessibility (Accessibility.dll stays). -->
+    <UnusedFrameworkFile Include="PresentationFramework.dll;PresentationCore.dll;WindowsBase.dll;System.Xaml.dll;PresentationUI.dll" />
+    <UnusedFrameworkFile Include="PresentationFramework.Aero.dll;PresentationFramework.Aero2.dll;PresentationFramework.AeroLite.dll" />
+    <UnusedFrameworkFile Include="PresentationFramework.Classic.dll;PresentationFramework.Luna.dll;PresentationFramework.Royale.dll" />
+    <UnusedFrameworkFile Include="PresentationFramework-SystemCore.dll;PresentationFramework-SystemData.dll;PresentationFramework-SystemDrawing.dll" />
+    <UnusedFrameworkFile Include="PresentationFramework-SystemXml.dll;PresentationFramework-SystemXmlLinq.dll" />
+    <UnusedFrameworkFile Include="ReachFramework.dll;System.Printing.dll;System.IO.Packaging.dll;System.Windows.Controls.Ribbon.dll" />
+    <UnusedFrameworkFile Include="System.Windows.Input.Manipulations.dll;System.Windows.Presentation.dll;WindowsFormsIntegration.dll;DirectWriteForwarder.dll" />
+    <UnusedFrameworkFile Include="UIAutomationClient.dll;UIAutomationClientSideProviders.dll;UIAutomationProvider.dll;UIAutomationTypes.dll" />
+    <UnusedFrameworkFile Include="D3DCompiler_47_cor3.dll;PenImc_cor3.dll;PresentationNative_cor3.dll;vcruntime140_cor3.dll;wpfgfx_cor3.dll" />
+    <!-- The WinForms designer (Visual Studio only) and Visual Basic. -->
+    <UnusedFrameworkFile Include="System.Windows.Forms.Design.dll;Microsoft.VisualBasic.Core.dll;Microsoft.VisualBasic.Forms.dll" />
+    <!-- Other parts of .NET the app has no use for. -->
+    <UnusedFrameworkFile Include="System.Data.Common.dll;System.Private.DataContractSerialization.dll;System.DirectoryServices.dll;Microsoft.CSharp.dll" />
+    <UnusedFrameworkFile Include="System.Linq.Parallel.dll;System.Linq.Queryable.dll;System.Security.Cryptography.Pkcs.dll;System.Security.Cryptography.Xml.dll" />
+    <UnusedFrameworkFile Include="System.Transactions.Local.dll;System.Net.HttpListener.dll;System.Net.Mail.dll;System.Net.WebSockets.dll" />
+    <UnusedFrameworkFile Include="System.Net.WebSockets.Client.dll;System.CodeDom.dll;System.Threading.Tasks.Dataflow.dll;System.Formats.Tar.dll" />
+    <UnusedFrameworkFile Include="System.Diagnostics.PerformanceCounter.dll;System.ComponentModel.Annotations.dll;System.Security.Permissions.dll" />
+  </ItemGroup>
+
+  <!-- Runs as soon as the SDK has listed the runtime's files, so the files copied and the exe's deps.json both leave them out. -->
+  <Target Name="LeaveOutUnusedFrameworkFiles" AfterTargets="ResolveRuntimePackAssets">
+    <ItemGroup>
+      <_UnusedFrameworkFile Include="@(UnusedFrameworkFile)" DestinationSubPath="%(Identity)" />
+      <RuntimePackAsset Remove="@(_UnusedFrameworkFile)" MatchOnMetadata="DestinationSubPath" MatchOnMetadataOptions="CaseInsensitive" />
+      <ReferenceCopyLocalPaths Remove="@(_UnusedFrameworkFile)" MatchOnMetadata="DestinationSubPath" MatchOnMetadataOptions="CaseInsensitive" />
+    </ItemGroup>
+  </Target>
 
   <ItemGroup>
     <!-- Also embedded, so the window and header can show the same icon. LogicalName must match AppIcon. -->
@@ -30,10 +67,10 @@
     <EmbeddedResource Include="Assets\Fonts\Montserrat-SemiBold.ttf" LogicalName="font.montserrat-semibold" />
   </ItemGroup>
 
-  <!-- Trimming (build-release.ps1 -Trim) takes the exe from about 70 MB to about 30 MB, but Microsoft does not support trimming
-       WinForms, and it does not work yet: the window can't take a dropped zip (TypeLoadException, then a crash with COM
-       switched on). It is OFF for releases. These settings only let an experiment get as far as running; the exe's
-       self-test (SelfTest.cs) is what shows whether it works. -->
+  <!-- Trimming (build-release.ps1 -Trim) takes the exe from about 43 MB to about 26 MB and passes the self-test, but it is OFF
+       for releases. Microsoft does not support trimming WinForms, and the trimmer removes methods that managed code never
+       calls from COM interfaces, which moves the rest to the wrong vtable slots. That crashed an earlier self-test, and a
+       self-test can't call every interface Windows or a screen reader might. See docs/ARCHITECTURE.md. -->
   <PropertyGroup Condition="'$(PublishTrimmed)' == 'true'">
     <_SuppressWinFormsTrimError>true</_SuppressWinFormsTrimError>
     <!-- Trimming turns COM interop off by default, and a file dragged in from Explorer arrives as a COM object. Without

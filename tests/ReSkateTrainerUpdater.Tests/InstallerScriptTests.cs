@@ -57,8 +57,8 @@ internal static class InstallerScriptTests
         Check("Invariant: the self-update still downloads the portable zip, which the setup name can't match",
             release.Contains("release/ReSkateTrainerUpdater-*.zip", StringComparison.Ordinal) && !"ReSkateTrainerUpdater-Setup-1.0.0.exe".EndsWith(".zip", StringComparison.Ordinal));
 
-        // Trimming would make the self-update much smaller, but a trimmed WinForms exe can't take a dropped zip yet. So it is
-        // off unless asked for, and the exe is always self-tested after it is built.
+        // Trimming would make the self-update smaller still, but Microsoft doesn't support it for WinForms and it can break COM
+        // interfaces the self-test can't reach. So it is off unless asked for, and the exe is always self-tested after it is built.
         var csproj = Read(@"src\ReSkateTrainerUpdater\ReSkateTrainerUpdater.csproj");
         var program = Read(@"src\ReSkateTrainerUpdater\Program.cs");
         Check("Invariant: a build is only ever trimmed on request, and the script always runs the exe's self-test and stops on failure",
@@ -71,6 +71,30 @@ internal static class InstallerScriptTests
         Check("Invariant: trimming keeps the WinForms assemblies whole, because trimmed they can't load a dropped file",
             csproj.Contains("TrimmerRootAssembly Include=\"System.Windows.Forms\"", StringComparison.Ordinal) &&
             csproj.Contains("TrimmerRootAssembly Include=\"System.Drawing.Common\"", StringComparison.Ordinal));
+        // The release leaves out framework files nothing uses (mostly WPF). Only whole files go, never ones the app needs.
+        var leftOut = Regex.Matches(csproj, @"<UnusedFrameworkFile Include=""([^""]+)""").SelectMany(m => m.Groups[1].Value.Split(';')).ToList();
+        Check("The release leaves out WPF, which this WinForms app never uses",
+            leftOut.Contains("PresentationFramework.dll") && leftOut.Contains("PresentationCore.dll") && leftOut.Contains("wpfgfx_cor3.dll"),
+            string.Join(", ", leftOut));
+        string[] needed =
+        {
+            "System.Windows.Forms.dll", "System.Windows.Forms.Primitives.dll", "System.Drawing.Common.dll", "System.Drawing.Primitives.dll",
+            "System.Private.CoreLib.dll", "System.Private.Uri.dll", "System.Private.Xml.dll", "System.Runtime.dll", "Accessibility.dll",
+            "Microsoft.Win32.SystemEvents.dll", "System.ComponentModel.Primitives.dll", "System.ComponentModel.TypeConverter.dll",
+            "System.Configuration.ConfigurationManager.dll", "System.Net.Http.dll", "System.Net.Security.dll", "System.Security.Cryptography.dll",
+            "System.Text.Json.dll", "System.IO.Compression.dll", "System.IO.Compression.ZipFile.dll", "System.Diagnostics.StackTrace.dll",
+            "System.Resources.Extensions.dll", "ReSkateTrainerUpdater.dll", "ReSkateTrainerUpdater.Core.dll",
+        };
+        var wrong = leftOut.Intersect(needed, StringComparer.OrdinalIgnoreCase).ToList();
+        Check("Invariant: no assembly the app, WinForms, drawing, downloads or zips need is left out of the release",
+            leftOut.Count > 0 && wrong.Count == 0, string.Join(", ", wrong));
+        Check("Invariant: files are left out whole, before the runtime's file list and deps.json are written",
+            Regex.IsMatch(csproj, @"<Target Name=""LeaveOutUnusedFrameworkFiles"" AfterTargets=""ResolveRuntimePackAssets"">") &&
+            csproj.Contains("<RuntimePackAsset Remove=\"@(_UnusedFrameworkFile)\"", StringComparison.Ordinal));
+        var selfTest = Read(@"src\ReSkateTrainerUpdater\SelfTest.cs");
+        Check("Invariant: the self-test loads every referenced assembly and drops a zip the way Explorer does",
+            selfTest.Contains("GetReferencedAssemblies()", StringComparison.Ordinal) && selfTest.Contains("SHCreateDataObject(", StringComparison.Ordinal) &&
+            selfTest.Contains("OleDropTargetInterface", StringComparison.Ordinal) && !selfTest.Contains("[ComImport", StringComparison.Ordinal));
         Check("The CI workflow builds the release files, so the self-test runs on every push",
             Read(@".github\workflows\ci.yml").Contains("build-release.ps1", StringComparison.Ordinal));
 

@@ -309,20 +309,50 @@ Background work (unpacking, inspecting the folder, downloading, installing) runs
 throws away a result if the user picked something else while it was running. While an install or download runs,
 `_installing` blocks drops, browsing, and every button.
 
-## Why the release exe is not trimmed
+## How the release exe is kept small, and why it is not trimmed
 
-The self-update downloads the whole exe (about 64 MB zipped), because it is a self-contained single file. Publishing it
-trimmed (`build-release.ps1 -Trim`) gives about 30 MB (25 MB zipped), but it is **off**, because it breaks the app:
+The self-update downloads the whole exe, because it is a self-contained single file that carries the .NET runtime. The
+Windows Desktop runtime is one package holding both WinForms and WPF, and .NET 8 gives no way to take only WinForms, so a
+plain publish carries all of WPF too. Measured with SDK 8.0.427 and runtime 8.0.33:
 
-- Microsoft doesn't support trimming WinForms, and the SDK refuses unless a private switch is set.
-- A trimmed build turns off COM interop, and without COM a dropped zip throws `TypeLoadException` (the "Unhandled exception"
-  dialog). Turning COM back on and keeping the WinForms assemblies whole fixed the in-process checks, but then the real
-  drop-target call crashed the exe with an access violation.
-- A smaller exe can't be shipped untested: a broken exe delivered by self-update can't update itself again.
+| Build | Files before bundling | Exe | Zip |
+| --- | --- | --- | --- |
+| Everything (1.5.1 and earlier) | 256 files, 165 MB | about 66 MB | 60.8 MB |
+| Unused framework files left out (the release) | 201 files, 100 MB | 42.7 MB | 37.2 MB |
+| Also trimmed (`-Trim`, not released) | | 26.0 MB | 20.6 MB |
 
-What exists to make it possible later: `ReSkateTrainerUpdater.exe --self-test <file>` (`SelfTest.cs`) builds the window out of sight and
-checks fonts, version info, settings JSON, signature checking, drop data, dialogs, accessibility and a real drop-target
-call. `build-release.ps1` runs it on every build and stops if it fails, and CI runs the script on every push. Settings
-JSON uses a source-generated serializer (`SettingsJson`) so it keeps working trimmed. To try trimming again: build with
-`-Trim`, make the self-test pass, then drag a zip in from Explorer by hand. Delta updates (for example Velopack) would
-shrink repeat downloads further, but replace the installer, `AppUpdater` and the trust rules, so they are a separate project.
+**Leaving files out.** A static walk of assembly references from the app (and from `System.Private.CoreLib`) reaches 86 of
+the 221 managed assemblies. The rest are WPF, the WinForms designer, Visual Basic and other parts of .NET that nothing the app
+runs refers to. The csproj lists the large ones as `UnusedFrameworkFile`, along with WPF's native `*_cor3.dll` files, and the
+`LeaveOutUnusedFrameworkFiles` target removes them from `RuntimePackAsset` right after the SDK resolves the runtime pack. That
+is before both the copy and `deps.json`, so the two agree. No IL is changed: every file that ships is Microsoft's, byte for
+byte. Small facade assemblies (`mscorlib`, `System`, `netstandard` and the like) stay even though nothing references them,
+because old type names can be resolved through them by name. So do `System.Diagnostics.StackTrace` (loaded by name for stack
+traces) and `System.Resources.Extensions` (loaded by name for some resources). The way this could fail is a
+`FileNotFoundException` for a missing assembly, so the self-test's first step loads every assembly the app references,
+directly or through the framework. A future change that starts using, say, `System.Data.Common` fails the build until the
+file is taken off the list. The list was made for .NET 8; check it again when moving to a new major version.
+
+**Why not trimming.** Trimming (`build-release.ps1 -Trim`) passes the self-test, but it stays off:
+
+- Microsoft doesn't support trimming WinForms, and the SDK refuses unless a private switch is set. The csproj also has to
+  turn COM interop back on (without it, a file dropped from Explorer throws `TypeLoadException`) and keep the WinForms
+  assemblies whole.
+- The trimmer removes the methods of a COM interface that managed code never calls, which moves the remaining methods into
+  the wrong vtable slots. That is what crashed the old self-test with an access violation: it declared `IDropTarget` as a
+  `[ComImport]` interface but only called `DragEnter` and `Drop`, so its `Drop` call landed in WinForms' `DragOver`. The app's
+  own drop handling was fine. Windows and screen readers call interfaces the self-test can't reach, so the same kind of break
+  could hide anywhere.
+- A smaller exe can't be shipped on hope: a broken exe delivered by self-update can't update itself again.
+
+**The self-test.** `ReSkateTrainerUpdater.exe --self-test <file>` (`SelfTest.cs`) builds the window out of sight and checks
+every referenced assembly, fonts, version info, settings JSON, signature checking, drop data, dialogs and accessibility.
+It then drops a zip the way Explorer does: it makes the shell's own data object for a real zip (`SHCreateDataObject`),
+calls the window's registered drop target through its vtable (`DragEnter`, `DragOver`, `Drop`), and expects the zip tile
+to show the file. With COM interop switched off it fails with `0x80131515`, which is the failure users saw, so the test
+catches it. `build-release.ps1` runs it on every build and stops if it fails, and CI runs the script on every push. Settings
+JSON uses a source-generated serializer (`SettingsJson`), so it would keep working trimmed.
+
+Delta updates (for example Velopack) would shrink repeat downloads further, but they replace the installer, `AppUpdater`
+and the trust rules, so they are a separate project. A framework-dependent exe (a few MB) would need users to install the
+.NET 8 Desktop Runtime first.

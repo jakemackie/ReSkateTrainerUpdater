@@ -14,10 +14,9 @@
     Only build the exe and the zip. For quick local builds; a release always builds the setup too.
 
 .PARAMETER Trim
-    Publish the exe trimmed: about 30 MB instead of about 70 MB, which would make the self-update download much smaller.
-    NOT used for releases yet. Trimming WinForms isn't supported by Microsoft, and the exe's self-test currently fails on a
-    trimmed build (dropping a zip onto the window crashes it). Don't release a trimmed exe until that passes AND a zip
-    dragged in from Explorer has been tried by hand. See docs/ARCHITECTURE.md.
+    Publish the exe trimmed: about 26 MB instead of about 43 MB. NOT used for releases. It passes the self-test, but
+    Microsoft doesn't support trimming WinForms, and trimming can break COM interfaces that the self-test can't reach. Even
+    without it, the exe leaves out the framework assemblies nothing uses (see the csproj). See docs/ARCHITECTURE.md.
 
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File .\scripts\build-release.ps1
@@ -49,7 +48,7 @@ if ($LASTEXITCODE -ne 0) { throw 'dotnet publish failed' }
 
 $exe = Join-Path $output 'publish\ReSkateTrainerUpdater.exe'
 
-# Run the exe once, out of sight, to prove the window builds and the parts trimming can break still work. Nothing is
+# Run the exe once, out of sight, to prove the window builds and the parts a smaller build can break still work. Nothing is
 # sent over the network and no settings are written. A release must never go out if this fails.
 $selfTestReport = Join-Path $output 'self-test.txt'
 $selfTest = Start-Process -FilePath $exe -ArgumentList '--self-test', "`"$selfTestReport`"" -Wait -PassThru

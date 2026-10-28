@@ -234,7 +234,7 @@ A self-update installs code, so it is held to a stricter standard than a Trainer
 | `src/ReSkateTrainerUpdater.Core/TrainerManifest.cs` | `latest.json`: the model, the strict parser, the canonical writer |
 | `src/ReSkateTrainerUpdater.Core/AppUpdater.cs` | Replacing the running exe: `Stage`, `Swap`, `CleanUpLeftovers`, `CanUpdateInPlace` |
 | `src/ReSkateTrainerUpdater.Core/ManifestSignature.cs` | The signature on `latest.json`: trusted public keys, `Sign`, `Verify`, key generation |
-| `src/ReSkateTrainerUpdater/SelfTest.cs` | `--self-test`: builds the window out of sight and checks the risky parts. The build script runs it. |
+| `src/ReSkateTrainerUpdater/SelfTest.cs` | `--self-test`: loads every referenced assembly, builds the window out of sight, drops a zip as Explorer does, and checks the other risky parts. The build script runs it. |
 | `bucket/reskate-trainer-updater.json`, `scripts/make-package-manifests.ps1` | The Scoop manifest, and the script that updates it and writes the winget manifest |
 | `.github/workflows/`, `.github/actions/dotnet-8/`, `global.json` | CI (parallel jobs), Release, and the weekly manifest check. The composite action uses the runner's .NET 8 SDK instead of installing one. `global.json` pins SDK 8. |
 | `LICENSE`, `.github/ISSUE_TEMPLATE/` | The MIT licence, and the issue templates (`problem.md` must match what "Report a problem" prefills) |
@@ -284,10 +284,17 @@ A self-update installs code, so it is held to a stricter standard than a Trainer
 
 ## Things that look wrong but are deliberate
 
-- **The release exe is not trimmed, though trimming would cut it from about 70 MB to about 30 MB.** Trimming WinForms is
-  unsupported and breaks dropping a zip on the window (`TypeLoadException`, then a crash). `build-release.ps1 -Trim` and the
-  `PublishTrimmed` settings in the csproj are there for trying again, with the self-test as the gate. Don't turn it on for
-  releases until the self-test passes and a zip dragged in from Explorer has been tried by hand. See `docs/ARCHITECTURE.md`.
+- **The release exe leaves out most of the .NET runtime it ships with.** The `UnusedFrameworkFile` list in the csproj (WPF,
+  the WinForms designer, Visual Basic and other parts nothing references) is removed whole before `deps.json` is written. That
+  takes the zip from about 61 MB to about 37 MB without changing any code that runs. The self-test loads every assembly the app
+  refers to, directly or through the framework, so a file that is still needed fails the build. Never add one that the app,
+  WinForms or System.Drawing references (`InstallerScriptTests` checks a list of them), and keep the small facade assemblies.
+- **The release exe is not trimmed, though trimming would cut the zip to about 21 MB, and a trimmed exe passes the self-test.**
+  Microsoft doesn't support trimming WinForms, and the trimmer removes COM interface methods that managed code never calls,
+  which puts the rest in the wrong vtable slots (that is what crashed the old self-test). Windows and screen readers call
+  interfaces the self-test can't reach. `build-release.ps1 -Trim` stays for experiments. See `docs/ARCHITECTURE.md`.
+- **The self-test calls the window's drop target through raw vtable pointers (`unsafe`).** It is how Explorer calls it, and a
+  managed `[ComImport]` interface is exactly what trimming breaks. Don't swap it back.
 - **A failed download can leave a `.part` file in the temp folder.** Only a dropped connection or a timeout keeps it, so the next
   click can carry on. The finished file still has to match the size and hash, so it is never trusted.
 - **The licence is MIT and covers this project's own code only.** The fonts, the background picture and the Trainer have their
@@ -351,8 +358,5 @@ A self-update installs code, so it is held to a stricter standard than a Trainer
 - **A release has two downloads that look similar.** `ReSkateTrainerUpdater-Setup-<version>.exe` is the installer people
   are told to use. `ReSkateTrainerUpdater-<version>.zip` is the portable exe, which the app itself downloads to
   update. Both are needed.
-- **`dotnet publish` leaves five `*_cor3.dll` files next to the exe** (D3DCompiler, PenImc, PresentationNative,
-  vcruntime140, wpfgfx). They are WPF native files that this WinForms app never loads. `build-release.ps1`
-  correctly zips only the exe, and the lone exe was confirmed to run. Don't add them to the zip.
 - **Trainer Releases are never marked "Latest".** The README sends users to `releases/latest` for the app, so
   that must always be an app release.
