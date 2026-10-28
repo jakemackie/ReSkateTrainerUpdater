@@ -146,6 +146,10 @@ internal static class ComfortTests
         Check("It doesn't offer to go back to the same release", Home(Folder(Tournament("0.9.2"), samePast), Entry()).Links?.Any(l => l.Action == LinkAction.RestorePrevious) != true);
         Check("An unreadable backup is still offered, in plain words",
             Home(Folder(Tournament("0.9.2"), new BackupInfo(backup.Path, backup.Created, null)), Entry()).Links?.Any(l => l.Text == "Restore backup") == true);
+        var backupOfOlder = new BackupInfo(backup.Path, backup.Created, Tournament("0.9.0"));
+        var updateWithBackup = Home(Folder(Tournament("0.9.1"), backupOfOlder), Entry());
+        Check("When an update is on offer, the big blue UPDATE tile is the way forward, not a small restore button",
+            updateWithBackup.Tile is { Title: "UPDATE", Enabled: true } && updateWithBackup.Links?.Any(l => l.Action == LinkAction.RestorePrevious) != true);
         Check("No backup, no restore button", Home(Folder(Tournament("0.9.2")), Entry()).Links?.Any(l => l.Action == LinkAction.RestorePrevious) != true);
 
         var broken = Home(new InstallFolderInfo(@"C:\Games\ReSkate", false, false, false, false, null, false, false), Entry());
@@ -156,7 +160,7 @@ internal static class ComfortTests
         Check("Every button has a few words of text", views.SelectMany(v => v.Links ?? Array.Empty<CardLink>()).All(l => l.Text.Length is > 0 and <= 20), "keep them short");
 
         Section("After an install");
-        var ready = Home(Folder(Tournament("0.9.2")), Entry());
+        var ready = Home(Folder(Tournament("0.9.1")), Entry()); // an update is on offer, so the tile is the blue UPDATE
         var installed = new InstallResult(InstallOutcome.Installed, 0, 2, 1, Array.Empty<string>(), BackupFolder: @"C:\Games\ReSkate\_backup");
         var advice = UpdateAdvisor.DescribeResult(installed, Tournament("0.9.2"));
         Check("A good install says to press PLAY", advice is { Severity: Severity.Good, Next: FollowUp.Launch } && advice.Message.Contains("PLAY"), advice.Message);
@@ -269,6 +273,7 @@ internal static class ComfortTests
         Check("Invariant: no half-written files are left after a restore", !Directory.EnumerateFiles(game, "*.updating", SearchOption.AllDirectories).Any());
 
         var restoreAdvice = UpdateAdvisor.DescribeRestoreResult(restore, backups[0]);
+        Check("After a restore the screen's own tile stays, so a newer version is still one blue UPDATE click away", restoreAdvice.Next == FollowUp.None);
         Check("The restore message names the version", restoreAdvice.Severity == Severity.Good && restoreAdvice.Message.Contains("Trainer 0.9.1 (Tournament)"), restoreAdvice.Message);
         Check("The restore question names the version and says nothing is lost", UpdateAdvisor.DescribeRestorePrompt(backups[0]) is { } q && q.Contains("0.9.1") && q.Contains("saved first"));
 

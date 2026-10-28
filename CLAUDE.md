@@ -274,9 +274,13 @@ A self-update installs code, so it is held to a stricter standard than a Trainer
   offered **ADD TRAINER**, and an edition latest.json doesn't list (such as the standard one) is offered **SWITCH** to
   Tournament, as a deliberate choice with a confirmation, never as an update and never on its own. An unreadable
   `ReSkate.dll` is offered nothing, and the status card says why.
-- **The big tile is never hidden.** When there is nothing to do it goes dark and says "UP TO DATE" (green) or
-  "NO UPDATE". Users read a disappearing button as a bug, so don't remove it. After an install it becomes **PLAY**, or
-  **CLOSE GAME** if the game blocked it, until the user changes something.
+- **The big tile is never hidden.** When there is nothing to install and the folder has `ReSkateLauncher.exe`, it is a blue
+  **PLAY** ("Up to date. Start ReSkate"), because that is what people open the app to do. The status card still says
+  whether the Trainer is current, and the same goes when offline or when no update is published for the edition. Only
+  without a launcher does it go dark and say "UP TO DATE" (green) or "NO UPDATE". Users read a disappearing button as a
+  bug, so don't remove it. After an install it is **PLAY** too, or **CLOSE GAME** if the game blocked it, until the user
+  changes something. After a restore the screen's own tile stays (so an available update is still the blue **UPDATE**),
+  and no small Restore button is shown beside an UPDATE tile.
 - **There is no maximise button and the window can't be resized.** The launcher's window has the same two corner
   buttons. The layout is fixed, so a maximised window would just be a small app in a big black rectangle. A smaller
   default size was considered and left alone, because rule 5's measurements are for 1440 by 840. The window does remember

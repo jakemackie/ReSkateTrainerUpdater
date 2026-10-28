@@ -251,7 +251,8 @@ public static class UpdateAdvisor
         string? releaseUrl = c.App is { } app ? app.Entry.Url : c.Offer is { CanDownload: true, Entry: { } entry } ? entry.Url : null;
         if (OnlineSource.ReleasePageUrl(releaseUrl) is { } page) links.Add(new CardLink("Release notes", LinkAction.OpenUrl, page));
 
-        if (c.App is null && RestoreLink(c.FolderInfo) is { } restore) links.Add(restore);
+        // When a newer version is on offer, the big blue UPDATE tile is the way forward again, so no small undo button beside it.
+        if (c.App is null && c.Offer?.Kind != OfferKind.Update && RestoreLink(c.FolderInfo) is { } restore) links.Add(restore);
         if (view.Severity == Severity.Error) links.Add(ReportLink);
 
         return links.Count == 0 ? view : view with { Links = links.Take(HomeView.MaxLinks).ToList() };
@@ -356,7 +357,7 @@ public static class UpdateAdvisor
                     ahead
                         ? $"You have {installed.TrainerVersion}. The newest published is {entry.TrainerText}."
                         : "You're running the newest version.",
-                    new ActionTile("UP TO DATE", "Nothing to install", TileStyle.Success, TileAction.None),
+                    PlayOrIdle(folder, "Up to date. Start ReSkate", new ActionTile("UP TO DATE", "Nothing to install", TileStyle.Success, TileAction.None)),
                     Rows(folderRow, entry, Severity.Good, c.Now));
         }
 
@@ -387,8 +388,15 @@ public static class UpdateAdvisor
             offline
                 ? "Couldn't reach GitHub. You can still drop a Trainer zip."
                 : "There is no online update for this edition. You can still drop a Trainer zip.",
-            Idle("NO UPDATE", "Use a zip"), folderRow);
+            PlayOrIdle(folder, "Start ReSkate", Idle("NO UPDATE", "Use a zip")), folderRow);
     }
+
+    // With a Trainer installed and nothing to do, the tile that serves most is PLAY. The status card still says whether
+    // the Trainer is current. Without a launcher in the folder there is nothing to start, so the usual tile stays.
+    private static ActionTile PlayOrIdle(InstallFolderInfo folder, string subtitle, ActionTile otherwise) =>
+        folder.HasLauncher
+            ? new ActionTile("PLAY", subtitle, TileStyle.Primary, TileAction.Launch)
+            : otherwise;
 
     // The folder, the newest published Trainer, and whatever latest.json says about it (when it came out, what is new).
     private static StatusRow[] Rows(StatusRow folderRow, ManifestEntry entry, Severity severity, DateTimeOffset? now) =>
@@ -623,8 +631,9 @@ public static class UpdateAdvisor
         {
             case InstallOutcome.Installed:
                 string what = backup.Version is { HasTrainer: true } v ? "Trainer " + v.TrainerText : "your previous files";
+                // No follow-up tile: the screen's own big tile stays, so a newer version is still one blue UPDATE click away.
                 return new Advice($"Went back to {what}. The files it replaced are saved too, in case you change your mind.", Severity.Good,
-                    Next: FollowUp.Launch, Links: BackupLinks(result));
+                    Links: BackupLinks(result));
 
             case InstallOutcome.AlreadyUpToDate:
                 return new Advice("Your files already match that backup. Nothing needed changing.", Severity.Good);

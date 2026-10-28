@@ -256,15 +256,20 @@ internal static class OnlineTests
         Check("The update lists what is installed", update.Rows[0].Text.Contains("Installed: Trainer 0.9.1 (Tournament)"), update.Rows[0].Text);
 
         var current = View(Folder(Tournament("0.9.2")));
-        Check("The newest version shows a ready screen with a greyed-out tile",
-            current is { Pill: "READY", Severity: Severity.Good, Headline: "Ready to skate", Tile: { Title: "UP TO DATE", Style: TileStyle.Success, Action: TileAction.None, Enabled: false } });
+        Check("The newest version shows a ready screen with a blue PLAY tile",
+            current is { Pill: "READY", Severity: Severity.Good, Headline: "Ready to skate", Tile: { Title: "PLAY", Style: TileStyle.Primary, Action: TileAction.Launch, Enabled: true } });
+        Check("The tile still says you're up to date", current.Tile.Subtitle.StartsWith("Up to date"), current.Tile.Subtitle);
+        var noLauncher = UpdateAdvisor.DescribeHome(new UpdateContext(false, null, null, null, @"C:\Games\ReSkate", false, Folder(Tournament("0.9.2")) with { HasLauncher = false },
+            UpdateAdvisor.DescribeOnlineOffer(manifest, Folder(Tournament("0.9.2"))), OnlineStatus.Reachable));
+        Check("Without a launcher in the folder there is nothing to play, so the dark UP TO DATE tile stays",
+            noLauncher.Tile is { Title: "UP TO DATE", Style: TileStyle.Success, Action: TileAction.None, Enabled: false });
         Check("It confirms in words", current.Subline == "You're running the newest version.", current.Subline);
         var ahead = View(Folder(Tournament("0.9.5")));
-        Check("A newer local version says so and offers nothing", ahead.Subline.Contains("0.9.5") && ahead.Subline.Contains("0.9.2 (Tournament)") && !ahead.Tile.Enabled, ahead.Subline);
+        Check("A newer local version says so and offers nothing", ahead.Subline.Contains("0.9.5") && ahead.Subline.Contains("0.9.2 (Tournament)") && ahead.Tile.Action == TileAction.Launch, ahead.Subline);
 
         var offlineInstalled = View(Folder(Tournament("0.9.2")), OnlineStatus.Unavailable);
         Check("Offline with a Trainer says so and stays calm",
-            offlineInstalled is { Pill: "OFFLINE", Severity: Severity.Neutral, Tile: { Title: "NO UPDATE", Enabled: false } } && offlineInstalled.Subline.Contains("drop a Trainer zip"), offlineInstalled.Subline);
+            offlineInstalled is { Pill: "OFFLINE", Severity: Severity.Neutral, Tile: { Title: "PLAY", Action: TileAction.Launch, Enabled: true } } && offlineInstalled.Subline.Contains("drop a Trainer zip"), offlineInstalled.Subline);
         var offlineEmpty = View(Folder(null, hasRuntime: false), OnlineStatus.Unavailable);
         Check("Offline with an empty folder points at the zip", offlineEmpty.Headline == "Can't check GitHub" && !offlineEmpty.Tile.Enabled, offlineEmpty.Headline);
         Check("Nothing published yet says so",
@@ -275,7 +280,7 @@ internal static class OnlineTests
             switchView is { Pill: "SWITCH", Tile: { Title: "SWITCH", Action: TileAction.DownloadAndInstall, Enabled: true } }
             && switchView.Subline.Contains("Standard edition") && switchView.Subline.Contains("Tournament Edition 0.9.2") && switchView.Tile.Subtitle == "To Tournament 0.9.2", switchView.Subline);
         Check("With nothing published, the standard edition is told there's no online update for it",
-            View(Folder(standardEdition), m: new TrainerManifest()) is { Headline: "Trainer 0.9.1 installed", Tile.Enabled: false });
+            View(Folder(standardEdition), m: new TrainerManifest()) is { Headline: "Trainer 0.9.1 installed", Tile: { Title: "PLAY", Action: TileAction.Launch } });
 
         var plainReSkate = new ReSkateVersion("2.1.1", "ReSkate", null, null, null);
         var addView = View(Folder(plainReSkate));

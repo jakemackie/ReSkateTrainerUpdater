@@ -14,7 +14,7 @@ This is an unofficial helper. It isn't made by, or affiliated with, the ReSkate 
 
 1. Download `ReSkateTrainerUpdater-Setup-<version>.exe` from the [latest release](../../releases/latest) and run it. It installs the updater for you only (no administrator needed), adds it to your Start Menu, and lists it under Settings, Apps, where you can uninstall it. Prefer no installer? The `.zip` on the same page is the portable exe: unzip it anywhere you can write to. If Windows shows a blue "Windows protected your PC" screen, see [below](#if-windows-says-windows-protected-your-pc).
 2. Open the updater. The first time, it looks in the usual places for your ReSkate folder and offers the one it finds: click **USE IT**. If it doesn't find it, click the folder box and choose the folder with `ReSkateLauncher.exe`. The app remembers it for next time.
-3. Click the big blue tile. It says **UPDATE** when a newer Trainer is published, **INSTALL** for an empty folder, **ADD TRAINER** if you have plain ReSkate, or **SWITCH** if you have another edition and want to move to Tournament (it asks first). When you're current it goes dark and says **UP TO DATE**.
+3. Click the big blue tile. It says **UPDATE** when a newer Trainer is published, **INSTALL** for an empty folder, **ADD TRAINER** if you have plain ReSkate, or **SWITCH** if you have another edition and want to move to Tournament (it asks first). When you're current, the status card says so and the tile is **PLAY**.
 4. If the game or its launcher is open, the tile becomes **CLOSE GAME**. It tells you which program is in the way and, only if you say yes, closes it and carries on with the install.
 5. Click **PLAY** to start the ReSkate launcher.
 

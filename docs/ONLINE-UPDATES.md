@@ -117,11 +117,11 @@ what to show.
 | No `ReSkate.dll` (empty or new folder) | `tournament` | Green READY pill, "Ready to install", and a blue **INSTALL** tile |
 | No `ReSkate.dll` | no `tournament` | "Nothing published yet". The tile stays dark. |
 | Tournament 0.9.1 | `tournament` 0.9.2 | Blue UPDATE pill, "Update available, 0.9.1 → 0.9.2 (Tournament)", and a blue **UPDATE** tile |
-| Tournament 0.9.2 | `tournament` 0.9.2, any build | Green READY pill, "Ready to skate. You're running the newest version.", and a dark green **UP TO DATE** tile |
-| Tournament 0.9.5 | `tournament` 0.9.2 | Says your version is newer than the published one. The tile is dark. No downgrade is offered. |
+| Tournament 0.9.2 | `tournament` 0.9.2, any build | Green READY pill, "Ready to skate. You're running the newest version.", and a blue **PLAY** tile ("Up to date. Start ReSkate"). With no `ReSkateLauncher.exe` in the folder it is a dark green **UP TO DATE** tile instead. |
+| Tournament 0.9.5 | `tournament` 0.9.2 | Says your version is newer than the published one. The tile is **PLAY**. No downgrade is offered. |
 | Standard edition, any version | `tournament` only | Blue SWITCH pill, "Another edition is available", and a blue **SWITCH** tile. It is only ever a deliberate switch: the download asks "This changes your Trainer from the Standard edition to the Tournament edition. Continue?" first, and the old files are backed up. It is never offered as an update. |
 | Standard edition | `standard` too | Treated like any other edition: an **UPDATE** when it is newer. |
-| Standard edition, any version | no `tournament` | "Trainer 0.9.1 installed. There is no online update for this edition." The tile is dark. Dropping a zip still works. |
+| Standard edition, any version | no `tournament` | "Trainer 0.9.1 installed. There is no online update for this edition." The tile is **PLAY**. Dropping a zip still works. |
 | Plain ReSkate, no Trainer | `tournament` | Green READY pill, "Add the Trainer", and a blue **ADD TRAINER** tile |
 | Plain ReSkate, no Trainer | no `tournament` | "ReSkate without the Trainer". The tile is dark. Dropping a zip still works. |
 | A `ReSkate.dll` that can't be read | anything | Amber HEADS UP pill, "Couldn't read your ReSkate files", with what to do next. The tile is dark. |
