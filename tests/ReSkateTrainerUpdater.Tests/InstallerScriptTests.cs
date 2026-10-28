@@ -20,7 +20,7 @@ internal static class InstallerScriptTests
             return;
         }
 
-        string Read(string relative) => File.ReadAllText(Path.Combine(root, relative));
+        string Read(string relative) => File.ReadAllText(Path.Combine(root, relative.Replace('\\', Path.DirectorySeparatorChar)));
         var script = Read(@"installer\ReSkateTrainerUpdater.iss");
         var appInfo = Read(@"src\ReSkateTrainerUpdater\Ui\AppInfo.cs");
         var release = Read(@".github\workflows\release.yml");
@@ -74,7 +74,19 @@ internal static class InstallerScriptTests
         Check("The CI workflow builds the release files, so the self-test runs on every push",
             Read(@".github\workflows\ci.yml").Contains("build-release.ps1", StringComparison.Ordinal));
 
-        Check("The wizard pictures exist", File.Exists(Path.Combine(root, @"installer\wizard-large.bmp")) && File.Exists(Path.Combine(root, @"installer\wizard-small.bmp")));
+        // The workflows reuse the runner's .NET SDK instead of installing one on every run (about 30 seconds each time).
+        var composite = Read(".github/actions/dotnet-8/action.yml");
+        Check("The workflows share one step that uses the installed .NET 8 SDK and only installs it if it is missing",
+            composite.Contains("--list-sdks", StringComparison.Ordinal) && composite.Contains("actions/setup-dotnet", StringComparison.Ordinal) &&
+            Read(@".github\workflows\ci.yml").Contains("./.github/actions/dotnet-8", StringComparison.Ordinal) &&
+            release.Contains("./.github/actions/dotnet-8", StringComparison.Ordinal) &&
+            !release.Contains("uses: actions/setup-dotnet", StringComparison.Ordinal));
+        Check("global.json keeps every machine on SDK 8", Regex.IsMatch(Read("global.json"), @"""version"":\s*""8\."));
+        Check("Downloading every published zip (verify) is not part of every CI run",
+            !Read(@".github\workflows\ci.yml").Contains("-- verify", StringComparison.Ordinal) &&
+            Read(".github/workflows/verify-manifest.yml").Contains("-- verify", StringComparison.Ordinal));
+
+        Check("The wizard pictures exist", File.Exists(Path.Combine(root, "installer", "wizard-large.bmp")) && File.Exists(Path.Combine(root, "installer", "wizard-small.bmp")));
     }
 
     private static string? FindRepoRoot()

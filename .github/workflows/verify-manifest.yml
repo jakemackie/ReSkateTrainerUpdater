@@ -1,0 +1,27 @@
+name: Verify latest.json
+
+# Downloads every zip that latest.json lists from GitHub, exactly as the app would, and checks its size, SHA-256, version,
+# edition and build. It fails if latest.json points at a Release asset that is missing or doesn't match. This used to run
+# on every push, costing about 25 seconds each time. It only needs to run when latest.json changes, plus once a week to
+# catch a Release that was edited or deleted afterwards (GitHub emails you when a scheduled run fails).
+on:
+  push:
+    branches: [main]
+    paths: [latest.json]
+  schedule:
+    - cron: '17 5 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: verify-manifest
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/dotnet-8
+
+      - name: Verify latest.json against the published zips
+        run: dotnet run --project tools/ReSkateTrainerUpdater.ManifestTool -c Release -- verify

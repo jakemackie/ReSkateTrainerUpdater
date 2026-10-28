@@ -37,7 +37,9 @@ release notes. Building the setup needs Inno Setup 6, which GitHub's Windows run
    second pair the same way, list its public key too, and keep that private key offline as a spare. To sign a manifest
    change yourself, pass `--key-file <path>` to `add`, `set-app`, `remove` or `sign`.
 4. **Optional: protect `main`.** Go to Settings → Branches and add a rule that requires the CI check to pass
-   before merging. CI includes `verify`, which downloads every published zip and checks it.
+   before merging. CI has three jobs that run side by side (`test`, `package` and `linux-tests`). If you
+   require checks, require all three. The `Verify latest.json` workflow (`verify-manifest.yml`) downloads every
+   published zip and checks it; it runs when `latest.json` changes and every Monday, not on every push.
 
 ## Releasing a new version of the app
 
@@ -171,7 +173,7 @@ git commit -m "Publish ReSkate Trainer 0.9.2 (Tournament)"
 git push
 ```
 
-CI runs `verify` again. Running copies of the app see the update the next time they start. Allow about 5
+The `Verify latest.json` workflow runs again. Running copies of the app see the update the next time they start. Allow about 5
 minutes for GitHub's cache.
 
 ## Pulling a bad Trainer release
@@ -191,7 +193,7 @@ dotnet run --project tools/ReSkateTrainerUpdater.ManifestTool -- remove tourname
 Then commit and push `latest.json`. Users who already installed the bad version keep it. The app never
 downgrades anyone automatically. Tell them on Discord to drop the older zip onto the app.
 
-Don't delete a Release that `latest.json` still points to. Users would get a download error, and CI fails.
+Don't delete a Release that `latest.json` still points to. Users would get a download error, and the weekly `Verify latest.json` run fails.
 
 ## Pulling a bad app release
 

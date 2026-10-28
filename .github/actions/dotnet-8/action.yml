@@ -1,0 +1,20 @@
+name: Use the .NET 8 SDK
+description: >
+  GitHub's runner images already include the .NET 8 SDK, so use it. Installing it again with actions/setup-dotnet
+  costs 20 to 40 seconds on every run. Only install it if the image ever stops having one.
+
+runs:
+  using: composite
+  steps:
+    - id: sdk
+      shell: pwsh
+      run: |
+        $found = @(dotnet --list-sdks 2>$null | Where-Object { $_ -match '^8\.' }).Count -gt 0
+        "found=$($found.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+        if ($found) { Write-Host "Using the .NET 8 SDK that is already installed." }
+        else { Write-Host "No .NET 8 SDK on this runner, installing it." }
+
+    - if: steps.sdk.outputs.found != 'true'
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 8.0.x

@@ -5,29 +5,46 @@ on:
     branches: [main]
   pull_request:
 
+# A newer push to the same branch or pull request makes the older run pointless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# The jobs are independent, so they run side by side instead of one after another.
 jobs:
-  build-and-test:
+  # Builds Core, the tests and the manifest tool (warnings are errors) and runs every check.
+  test:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 8.0.x
-
-      - name: Build
-        run: dotnet build ReSkateTrainerUpdater.sln -c Release
+      - uses: ./.github/actions/dotnet-8
 
       - name: Test
-        run: dotnet run --project tests/ReSkateTrainerUpdater.Tests -c Release --no-build
+        run: dotnet run --project tests/ReSkateTrainerUpdater.Tests -c Release
 
-      # Builds the portable zip and the setup program exactly as a release does, so a broken installer is caught here
-      # and not on release day. (GitHub's Windows images include Inno Setup.)
+      - name: Build the manifest tool and check latest.json (offline, no network)
+        run: dotnet run --project tools/ReSkateTrainerUpdater.ManifestTool -c Release -- check
+
+  # Builds the portable zip and the setup program exactly as a release does, so a broken installer is caught here and
+  # not on release day. The script also compiles the app (warnings are errors) and runs the exe's own self-test.
+  # (GitHub's Windows images include Inno Setup.)
+  package:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/dotnet-8
+
       - name: Build the release files
         shell: pwsh
         run: ./scripts/build-release.ps1
 
-      # Downloads every zip latest.json lists, exactly as the app would, and checks size, SHA-256, version,
-      # edition and build. Fails if latest.json points at a Release asset that doesn't exist or doesn't match.
-      - name: Verify latest.json against the published Trainer zips
-        run: dotnet run --project tools/ReSkateTrainerUpdater.ManifestTool -c Release --no-build -- verify
+  # The same checks on Linux. It costs no extra time (the package job is the slow one), and the code is meant to build and
+  # pass anywhere. The few checks that need Windows (file locking) say "skip" here and still run in the test job.
+  linux-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/dotnet-8
+
+      - name: Test
+        run: dotnet run --project tests/ReSkateTrainerUpdater.Tests -c Release
