@@ -52,7 +52,7 @@ finally {
 }
 
 # ---------- Scoop ----------
-$bucketFile = Join-Path $repoRoot 'bucketeskate-trainer-updater.json'
+$bucketFile = Join-Path (Join-Path $repoRoot 'bucket') 'reskate-trainer-updater.json'
 # Edit the three values in place rather than re-writing the file, so its layout stays exactly as it is committed.
 # (ConvertTo-Json in Windows PowerShell 5.1 re-indents everything in its own odd style.)
 $text = [IO.File]::ReadAllText($bucketFile)

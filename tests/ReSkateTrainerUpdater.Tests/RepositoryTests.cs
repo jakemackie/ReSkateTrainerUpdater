@@ -51,6 +51,12 @@ internal static class RepositoryTests
         var published = TrainerManifest.Parse(Read("latest.json")).Manifest?.App;
         Check("When the Scoop manifest is for the published app version, its hash is the one latest.json has",
             published is null || published.Version != scoopVersion || published.Sha256 == scoopArch.GetProperty("hash").GetString());
+
+        // A path like 'bucket\reskate...' once had its \r turned into a real carriage return, which broke the script.
+        var scripts = new[] { "scripts", "installer" }.SelectMany(d => Directory.GetFiles(Path.Combine(root, d), "*.ps1")).ToList();
+        var mangled = scripts.Where(f => Regex.IsMatch(File.ReadAllText(f), @"\r(?!\n)|[\x00-\x08\x0B\x0C\x0E-\x1F]"))
+            .Select(Path.GetFileName).ToList();
+        Check("No PowerShell script has a stray control character in it", scripts.Count > 0 && mangled.Count == 0, string.Join(", ", mangled));
     }
 
     private static string? FindRepoRoot()
