@@ -1,10 +1,12 @@
 {
   "schemaVersion": 1,
   "app": {
-    "version": "1.3.0",
-    "url": "https://github.com/jakemackie/ReSkateTrainerUpdater/releases/download/v1.3.0/ReSkateTrainerUpdater-1.3.0.zip",
-    "sizeBytes": 63761635,
-    "sha256": "5493967447a113c63eb71c5048a6813a8e0a742a749639fcf4b0dc619b411783"
+    "version": "1.4.0",
+    "url": "https://github.com/jakemackie/ReSkateTrainerUpdater/releases/download/v1.4.0/ReSkateTrainerUpdater-1.4.0.zip",
+    "sizeBytes": 63779579,
+    "sha256": "537c907d2708b788fa48b448303a2e8ee8e817e870ad8ed6e4def53ee29aa09b",
+    "published": "2026-10-28",
+    "notes": "Finds your folder, PLAY button, restore old versions, closes the game for you"
   },
   "editions": {
     "tournament": {
