@@ -4,7 +4,7 @@
 
 A small Windows app that installs the newest [ReSkate Trainer](https://github.com/andrewnakas/reskate-trainer) into your ReSkate folder. It finds your ReSkate folder, shows what's new, installs the update with one click, and then starts the game for you. If you already have a Trainer zip, you can drop it on the window instead.
 
-![The updater showing an available update, Trainer 0.9.1 to 0.9.2, with one big UPDATE tile](docs/images/update-available.jpg)
+![The updater showing that a newer Trainer, 0.9.2, is available, with a small Update available button and the big PLAY tile](docs/images/update-available.jpg)
 
 ![After the update: All set, a big PLAY tile, and buttons to open the backup folder or restore the old version](docs/images/ready-to-play.jpg)
 
@@ -14,9 +14,9 @@ This is an unofficial helper. It isn't made by, or affiliated with, the ReSkate 
 
 1. Download `ReSkateTrainerUpdater-Setup-<version>.exe` from the [latest release](../../releases/latest) and run it. It installs the updater for you only (no administrator needed), adds it to your Start Menu, and lists it under Settings, Apps, where you can uninstall it. Prefer no installer? The `.zip` on the same page is the portable exe: unzip it anywhere you can write to. If Windows shows a blue "Windows protected your PC" screen, see [below](#if-windows-says-windows-protected-your-pc).
 2. Open the updater. The first time, it looks in the usual places for your ReSkate folder and offers the one it finds: click **USE IT**. If it doesn't find it, click the folder box and choose the folder with `ReSkateLauncher.exe`. The app remembers it for next time.
-3. Click the big blue tile. It says **UPDATE** when a newer Trainer is published, **INSTALL** for an empty folder, **ADD TRAINER** if you have plain ReSkate, or **SWITCH** if you have another edition and want to move to Tournament (it asks first). When you're current, the status card says so and the tile is **PLAY**.
+3. Click the big blue tile. With a Trainer installed it is **PLAY**, whether you're current or not. When a newer Trainer is published, the status card says so and a small **Update available** button explains it: press that, then **UPDATE** (or **NOT NOW** to keep playing). The tile says **INSTALL** for an empty folder, **ADD TRAINER** if you have plain ReSkate, or **SWITCH** if you have another edition and want to move to Tournament (it asks first).
 4. If the game or its launcher is open, the tile becomes **CLOSE GAME**. It tells you which program is in the way and, only if you say yes, closes it and carries on with the install.
-5. Click **PLAY** to start the ReSkate launcher.
+5. Click **PLAY** to start the ReSkate launcher, any time.
 
 **Going back.** Each update keeps a copy of the files it replaced (the newest three are kept, older ones are deleted for you). After an update, **Restore 0.9.1** (or whichever version you had) puts them back. Your newer files are saved first, so you can switch back again. **Open backup folder** shows you the copies.
 
@@ -68,7 +68,7 @@ The app contacts GitHub only, and only when something asks it to:
 
 On the first run it also looks through a few folders on your PC (Desktop, Documents, Downloads and the like) for `ReSkateLauncher.exe`, to suggest your ReSkate folder. That search stays on your PC and nothing about it is sent anywhere.
 
-**Release notes** and **Report a problem** just open GitHub in your browser, like any link. The app sends nothing: you read the page, and you submit an issue yourself if you want to.
+**Report a problem** just opens GitHub in your browser, like any link. The app sends nothing: you read the page, and you submit an issue yourself if you want to.
 
 It sends nothing about you, your PC or your game: no IDs, folder paths, versions or usage data. GitHub sees your IP address, as with any visit to github.com. It never installs anything, and never closes a program, without your click. If you're offline, it skips the check silently and the drop zone works as before.
 

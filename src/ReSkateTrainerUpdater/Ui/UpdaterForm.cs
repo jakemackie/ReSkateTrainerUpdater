@@ -35,6 +35,7 @@ internal sealed class UpdaterForm : Form, IBackdropHost
     private readonly SquareButton[] _linkButtons = Enumerable.Range(0, HomeView.MaxLinks)
         .Select(_ => new SquareButton { Compact = true, Visible = false }).ToArray();
     private readonly WindowButtons _windowButtons = new();
+    private readonly ModalOverlay _modal = new();
     private readonly string _version = typeof(UpdaterForm).Assembly.GetName().Version?.ToString(3) ?? "";
 
     // The zip, whether the user chose it or it was downloaded from GitHub.
@@ -119,6 +120,12 @@ internal sealed class UpdaterForm : Form, IBackdropHost
         _copyLogButton.Click += (_, _) => CopyLog();
         _reportButton.Click += (_, _) => ReportProblem();
         _header.StatusClick += (_, _) => { _ = RefreshOnlineAsync(); };
+        _modal.Dismissed += (_, _) => CloseModal();
+        _modal.Confirmed += async (_, _) =>
+        {
+            CloseModal();
+            await OnlineInstallAsync();
+        };
         foreach (var button in _linkButtons) button.Click += async (_, _) => await OnLinkClickAsync(button);
         _windowButtons.MinimizeClick += (_, _) => WindowState = FormWindowState.Minimized;
         _windowButtons.CloseClick += (_, _) => Close();
@@ -239,13 +246,14 @@ internal sealed class UpdaterForm : Form, IBackdropHost
         foreach (Control control in new Control[]
                  {
                      _header, _statusCard, _logCard, _backupRow, _logButton, _copyLogButton, _reportButton,
-                     _folderTile, _zipTile, _actionTile, _windowButtons,
+                     _folderTile, _zipTile, _actionTile, _modal, _windowButtons,
                  }.Concat(_linkButtons))
         {
             Controls.Add(control);
         }
-        // The card's own buttons sit on top of the card.
+        // The card's own buttons sit on top of the card, and a dialog sits over everything but the corner buttons.
         foreach (var button in _linkButtons) button.BringToFront();
+        _modal.BringToFront();
         _windowButtons.BringToFront();
         LayoutAll();
     }
@@ -291,6 +299,8 @@ internal sealed class UpdaterForm : Form, IBackdropHost
         _logCard.Bounds = R(MarginLeft, cardTop, columnX - MarginLeft - 32, h - MarginBottom - buttonHeight - Gap - cardTop);
 
         LayoutLinkButtons(X);
+        _modal.Bounds = ClientRectangle;
+        _modal.PassThrough = _windowButtons.Bounds; // dimmed like the rest, but still clickable
     }
 
     // The status card's small buttons, in a row along the bottom of the card. Any that don't fit are left out.
@@ -736,8 +746,8 @@ internal sealed class UpdaterForm : Form, IBackdropHost
             case LinkAction.OpenFolder when link.Target is { } folder && Directory.Exists(folder):
                 OpenWithWindows(folder);
                 break;
-            case LinkAction.OpenUrl when OnlineSource.IsTrustedPageUrl(link.Target):
-                OpenWithWindows(link.Target!);
+            case LinkAction.ShowUpdateDialog:
+                ShowUpdateDialog();
                 break;
         }
     }
@@ -755,8 +765,28 @@ internal sealed class UpdaterForm : Form, IBackdropHost
         }
     }
 
-    private void ReportProblem() =>
-        OpenWithWindows(UpdateAdvisor.DescribeProblemReportUrl(_version, RuntimeInformation.OSDescription));
+    private void ReportProblem()
+    {
+        string url = UpdateAdvisor.DescribeProblemReportUrl(_version, RuntimeInformation.OSDescription);
+        if (OnlineSource.IsTrustedPageUrl(url)) OpenWithWindows(url);
+    }
+
+    // The "Update available" button: dims the window and explains the newer Trainer, with a way to install it.
+    private void ShowUpdateDialog()
+    {
+        if (_installing || _modal.IsOpen) return;
+        if (_offer is not { Kind: OfferKind.Update, Entry: { } latest } || _folderInfo?.Installed is not { HasTrainer: true } installed) return;
+
+        var snapshot = new Bitmap(ClientSize.Width, ClientSize.Height);
+        DrawToBitmap(snapshot, new Rectangle(Point.Empty, ClientSize));
+        _modal.Open(UpdateAdvisor.DescribeUpdateDialog(installed, latest, _backupRow.Checked), snapshot);
+    }
+
+    private void CloseModal()
+    {
+        _modal.Close();
+        Focus();
+    }
 
     private void Launch()
     {

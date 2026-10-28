@@ -53,9 +53,6 @@ optional, and are the tool's `--published` and `--notes`). If an edition isn't l
 | `published` | no | The day it was published, as `yyyy-MM-dd`. The card shows it as "Published 3 days ago". |
 | `notes` | no | One short line of 1 to 90 characters, no line breaks. The card shows it as "What's new: ...". |
 
-The "Release notes" button on the card needs no field of its own: it opens the release page of the tag in `url`
-(`https://github.com/jakemackie/ReSkateTrainerUpdater/releases/tag/<tag>`), and only ever that.
-
 If an entry breaks any rule, the app ignores that entry and keeps the others. If the file isn't valid JSON, has no
 `schemaVersion`, or has a higher `schemaVersion`, the app ignores all of it. Either way the user sees no error,
 only a line in the activity log.
@@ -116,7 +113,7 @@ what to show.
 | --- | --- | --- |
 | No `ReSkate.dll` (empty or new folder) | `tournament` | Green READY pill, "Ready to install", and a blue **INSTALL** tile |
 | No `ReSkate.dll` | no `tournament` | "Nothing published yet". The tile stays dark. |
-| Tournament 0.9.1 | `tournament` 0.9.2 | Blue UPDATE pill, "Update available, 0.9.1 → 0.9.2 (Tournament)", and a blue **UPDATE** tile |
+| Tournament 0.9.1 | `tournament` 0.9.2 | Blue UPDATE pill and "Update available, 0.9.1 → 0.9.2 (Tournament)" on the card, a blue **PLAY** tile, and a small **Update available** button. The button opens a dialog saying the version is out of date and the new one is available, with **UPDATE** and **NOT NOW**. UPDATE starts the download below. (With no `ReSkateLauncher.exe` in the folder there is nothing to play, so the tile is a blue **UPDATE** instead.) |
 | Tournament 0.9.2 | `tournament` 0.9.2, any build | Green READY pill, "Ready to skate. You're running the newest version.", and a blue **PLAY** tile ("Up to date. Start ReSkate"). With no `ReSkateLauncher.exe` in the folder it is a dark green **UP TO DATE** tile instead. |
 | Tournament 0.9.5 | `tournament` 0.9.2 | Says your version is newer than the published one. The tile is **PLAY**. No downgrade is offered. |
 | Standard edition, any version | `tournament` only | Blue SWITCH pill, "Another edition is available", and a blue **SWITCH** tile. It is only ever a deliberate switch: the download asks "This changes your Trainer from the Standard edition to the Tournament edition. Continue?" first, and the old files are backed up. It is never offered as an update. |
@@ -129,7 +126,7 @@ what to show.
 | Anything | unreachable, invalid, or offline | Grey OFFLINE pill, "Couldn't check for updates", and a **Check again** button. No error colours, no dialog. One line in the activity log. |
 
 While an update is shown, the card can also say "Published 3 days ago" and "What's new: ..." (from `published` and
-`notes`), and has a **Release notes** button.
+`notes`), and the update dialog repeats the date and note.
 
 Clicking the button:
 
@@ -171,9 +168,8 @@ The app makes two kinds of request, both to GitHub:
 The only header it adds is `User-Agent: ReSkateTrainerUpdater/<version>`. It sends no identifiers, folder paths,
 installed versions or usage data. GitHub sees the user's IP address, as with any visit to github.com.
 
-Two buttons open a page in the user's own browser instead: **Release notes** (the release page of the Trainer or app
-on offer) and **Report a problem** (this repository's "new issue" page with the app and Windows version filled in).
-The app makes no request for them and sends no log; the user reads the page and submits it themselves.
+**Report a problem** opens a page in the user's own browser: this repository's "new issue" page with the app and Windows
+version filled in. The app makes no request for it and sends no log; the user reads the page and submits it themselves.
 `OnlineSource.IsTrustedPageUrl` only lets the window open https pages of this repository.
 
 On the first run, when no folder is remembered, `ReSkateLocator` also looks through a few local folders for

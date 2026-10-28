@@ -64,17 +64,6 @@ public static class OnlineSource
     }
 
     /// <summary>
-    /// The page of the Release a trusted download URL belongs to, for a "release notes" link. Null if the URL isn't a
-    /// trusted download URL, so a link can never point anywhere else.
-    /// </summary>
-    public static string? ReleasePageUrl(string? downloadUrl)
-    {
-        if (!IsTrustedDownloadUrl(downloadUrl)) return null;
-        var tag = new Uri(downloadUrl!).AbsolutePath[ReleaseDownloadPathPrefix.Length..].Split('/')[0];
-        return $"https://github.com/{Owner}/{Repository}/releases/tag/{tag}";
-    }
-
-    /// <summary>
     /// True for an https page of this repository on github.com. The window only opens links that pass this, because it
     /// opens them in the user's browser.
     /// </summary>

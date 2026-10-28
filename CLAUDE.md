@@ -123,8 +123,8 @@ weakens the download checks, or breaks the release process.
 ### Online updates
 
 14. **`OnlineSource` is the only place that names a URL, owner, repository or branch.** Do not write
-   `github.com` or `raw.githubusercontent.com` anywhere else in `src/`. That includes the release page a "Release notes"
-   button opens and the "new issue" address behind "Report a problem".
+   `github.com` or `raw.githubusercontent.com` anywhere else in `src/`. That includes the "new issue" address behind
+   "Report a problem".
 15. **Never weaken `OnlineSource.IsTrustedDownloadUrl`.** It only accepts
    `https://github.com/jakemackie/ReSkateTrainerUpdater/releases/download/<tag>/<file>.zip`.
    `TrainerDownloader.DownloadAsync` checks it again before every request. Do not add other hosts, mirrors,
@@ -145,8 +145,8 @@ weakens the download checks, or breaks the release process.
 19. **No telemetry.** The app sends two kinds of request only: a GET for `latest.json` (on start-up, and again only when
     the user presses Check again or clicks the GitHub chip, never on a timer), and a GET for one zip (a Trainer, or a new
     version of the app) when the user clicks the big tile. The only header added is the User-Agent
-    `ReSkateTrainerUpdater/<version>`. Don't add analytics, IDs, crash reporting, or anything else. "Release notes" and
-    "Report a problem" hand an address to the user's browser: the app makes no request for them and never puts a log,
+    `ReSkateTrainerUpdater/<version>`. Don't add analytics, IDs, crash reporting, or anything else.
+    "Report a problem" hands an address to the user's browser: the app makes no request for it and never puts a log,
     path or any user data in the address (`DescribeProblemReportUrl` holds only the app and Windows versions).
 
 ### The installer
@@ -274,17 +274,23 @@ A self-update installs code, so it is held to a stricter standard than a Trainer
   offered **ADD TRAINER**, and an edition latest.json doesn't list (such as the standard one) is offered **SWITCH** to
   Tournament, as a deliberate choice with a confirmation, never as an update and never on its own. An unreadable
   `ReSkate.dll` is offered nothing, and the status card says why.
-- **The big tile is never hidden.** When there is nothing to install and the folder has `ReSkateLauncher.exe`, it is a blue
-  **PLAY** ("Up to date. Start ReSkate"), because that is what people open the app to do. The status card still says
-  whether the Trainer is current, and the same goes when offline or when no update is published for the edition. Only
-  without a launcher does it go dark and say "UP TO DATE" (green) or "NO UPDATE". Users read a disappearing button as a
-  bug, so don't remove it. After an install it is **PLAY** too, or **CLOSE GAME** if the game blocked it, until the user
-  changes something. After a restore the screen's own tile stays (so an available update is still the blue **UPDATE**),
-  and no small Restore button is shown beside an UPDATE tile.
+- **The big tile is never hidden, and with a Trainer installed it is PLAY.** When the folder has `ReSkateLauncher.exe` and
+  a Trainer is installed, the tile is a blue **PLAY**, because that is what people open the app to do. That holds whether
+  the Trainer is current ("Up to date. Start ReSkate"), a newer one is published, or GitHub is unreachable. The status card
+  says which. A newer Trainer is **not** a big tile: a small **Update available** button on the card opens a dialog
+  (`ModalOverlay`, built from `UpdateAdvisor.DescribeUpdateDialog`) that says the version is out of date, names the new one,
+  and offers UPDATE or NOT NOW. Only without a launcher does the big tile fall back to UPDATE, or to a dark "UP TO DATE" /
+  "NO UPDATE". After an install it is PLAY too, or **CLOSE GAME** if the game blocked it, until the user changes something.
+  Plain ReSkate (**ADD TRAINER**), a different edition (**SWITCH**), an empty folder (**INSTALL**) and a new app version
+  (**UPDATE APP**) are still big tiles.
 - **There is no maximise button and the window can't be resized.** The launcher's window has the same two corner
   buttons. The layout is fixed, so a maximised window would just be a small app in a big black rectangle. A smaller
   default size was considered and left alone, because rule 5's measurements are for 1440 by 840. The window does remember
   where it was (`WindowLeft`, `WindowTop`).
+- **The update dialog is a control over the whole window, not a second form.** `ModalOverlay` dims a snapshot of the window
+  and draws a card in the middle, like the launcher's dialogs, with no fade or slide (rule 8). It takes the keyboard (Enter
+  confirms, Escape cancels, acting on key-up), and passes the mouse through over the minimise and close buttons so the window
+  can always be closed.
 - **The small buttons on the status card are separate controls, not drawn by the card.** `UpdaterForm.LayoutLinkButtons`
   places them over the card, and `StatusCard` only reserves the room. That makes each a real focusable control with an
   accessible name (rule 4 still holds: they derive from `BufferedControl`).

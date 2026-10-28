@@ -251,8 +251,8 @@ internal static class OnlineTests
 
         var update = View(Folder(Tournament("0.9.1")));
         Check("An older Tournament shows an UPDATE pill and tile",
-            update is { Pill: "UPDATE", Severity: Severity.Highlight, Headline: "Update available", Tile: { Title: "UPDATE", Action: TileAction.DownloadAndInstall, Style: TileStyle.Primary } });
-        Check("The update says from and to", update.Subline == "0.9.1 → 0.9.2 (Tournament)" && update.Tile.Subtitle == "0.9.1 → 0.9.2", update.Subline + " / " + update.Tile.Subtitle);
+            update is { Pill: "UPDATE", Severity: Severity.Highlight, Headline: "Update available", Tile: { Title: "PLAY", Action: TileAction.Launch, Style: TileStyle.Primary } });
+        Check("The update says from and to", update.Subline == "0.9.1 → 0.9.2 (Tournament)", update.Subline);
         Check("The update lists what is installed", update.Rows[0].Text.Contains("Installed: Trainer 0.9.1 (Tournament)"), update.Rows[0].Text);
 
         var current = View(Folder(Tournament("0.9.2")));

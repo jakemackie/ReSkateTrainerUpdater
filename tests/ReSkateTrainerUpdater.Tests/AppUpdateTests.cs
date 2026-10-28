@@ -254,7 +254,9 @@ internal static class AppUpdateTests
         views.Add(both);
         Check("A new app version comes before a Trainer update", both.Tile.Action == TileAction.UpdateApp && both.Rows.Any(r => r.Text.Contains("Installed: Trainer 0.9.1")), both.Tile.Title);
         var trainerOnly = UpdateAdvisor.DescribeHome(new UpdateContext(false, null, null, null, @"C:\Games\ReSkate", false, folder, trainerOffer, OnlineStatus.Reachable, null));
-        Check("Without an app update the Trainer update is offered as before", trainerOnly.Tile is { Title: "UPDATE", Action: TileAction.DownloadAndInstall });
+        Check("Without an app update the Trainer update waits behind the small button, and PLAY is the big tile",
+            trainerOnly.Tile is { Title: "PLAY", Action: TileAction.Launch } && trainerOnly.Links?.Any(l => l.Action == LinkAction.ShowUpdateDialog) == true);
+        Check("An app update shows no small Trainer update button", both.Links?.Any(l => l.Action == LinkAction.ShowUpdateDialog) != true);
 
         var zip = Path.Combine(Path.GetTempPath(), "x.zip");
         var withZip = UpdateAdvisor.DescribeHome(new UpdateContext(true, zip, null, null, @"C:\Games\ReSkate", false, folder, trainerOffer, OnlineStatus.Reachable, offer));

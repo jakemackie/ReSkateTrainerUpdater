@@ -47,8 +47,8 @@ public enum LinkAction
     /// <summary>Open a folder in Explorer. The button's target is the folder.</summary>
     OpenFolder,
 
-    /// <summary>Open a page of this repository in the browser. The button's target is the address.</summary>
-    OpenUrl,
+    /// <summary>Open the "update available" dialog, which explains the new version and offers to install it.</summary>
+    ShowUpdateDialog,
 
     /// <summary>Put back the files the last install replaced.</summary>
     RestorePrevious,
@@ -120,6 +120,16 @@ public sealed record HomeView(
     /// <summary>The card has room for this many small buttons side by side.</summary>
     public const int MaxLinks = 3;
 }
+
+/// <summary>
+/// A dialog over the window, like the ReSkate launcher's: the window dims, and a card in the middle says something and offers
+/// one or two buttons. Built by <see cref="UpdateAdvisor.DescribeUpdateDialog"/>.
+/// </summary>
+/// <param name="Title">Upper case, for example UPDATE AVAILABLE.</param>
+/// <param name="Paragraphs">The text, one paragraph each.</param>
+/// <param name="ConfirmText">The main button, for example UPDATE.</param>
+/// <param name="CancelText">The other button, which just closes the dialog, for example NOT NOW.</param>
+public sealed record ModalView(string Title, IReadOnlyList<string> Paragraphs, string ConfirmText, string CancelText);
 
 /// <summary>The small chip in the top-left corner, like the launcher's "Welcome" chip: a dot, a title and a line under it.</summary>
 /// <param name="Title">For example "Connected to GitHub".</param>

@@ -75,10 +75,6 @@ internal static class ComfortTests
     {
         Section("Links");
 
-        Check("A release's page comes from its download address",
-            OnlineSource.ReleasePageUrl(TagUrl) == "https://github.com/jakemackie/ReSkateTrainerUpdater/releases/tag/trainer-tournament-0.9.2");
-        Check("An address that isn't a trusted download has no page", OnlineSource.ReleasePageUrl("https://evil.example/x.zip") is null && OnlineSource.ReleasePageUrl(null) is null);
-
         Check("Pages of this repository may be opened", OnlineSource.IsTrustedPageUrl("https://github.com/jakemackie/ReSkateTrainerUpdater/issues/new"));
         string[] refused =
         {
@@ -127,12 +123,17 @@ internal static class ComfortTests
         var update = Home(Folder(Tournament("0.9.1")), Entry("2026-10-25", "Smoother physics"));
         Check("An update says when it was published", update.Rows.Any(r => r.Text == "Published 3 days ago"), string.Join(" | ", update.Rows.Select(r => r.Text)));
         Check("An update says what is new", update.Rows.Any(r => r.Text == "What's new: Smoother physics"), string.Join(" | ", update.Rows.Select(r => r.Text)));
-        Check("An update links to the release notes",
-            update.Links?.Any(l => l is { Text: "Release notes", Action: LinkAction.OpenUrl } && OnlineSource.IsTrustedPageUrl(l.Target)) == true);
+        Check("A newer Trainer doesn't take the big tile: it stays PLAY",
+            update is { Pill: "UPDATE", Tile: { Title: "PLAY", Action: TileAction.Launch, Style: TileStyle.Primary, Enabled: true } } && update.Tile.Subtitle == "Start ReSkate", update.Tile.Title);
+        Check("A small \"Update available\" button opens the dialog instead",
+            update.Links?.Any(l => l is { Text: "Update available", Action: LinkAction.ShowUpdateDialog }) == true);
+        Check("There is no Release notes button any more", update.Links?.Any(l => l.Text == "Release notes") != true);
+        Check("Without a launcher the blue UPDATE tile is the only way forward, and there is no small button",
+            Home(Folder(Tournament("0.9.1"), launcher: false), Entry()) is { Tile: { Title: "UPDATE", Action: TileAction.DownloadAndInstall } } noPlay && noPlay.Links?.Any(l => l.Action == LinkAction.ShowUpdateDialog) != true);
         Check("Without a date or note there are no extra lines", Home(Folder(Tournament("0.9.1")), Entry()).Rows.Count == 2);
 
         var switchView = Home(Folder(new ReSkateVersion("2.1.1", "ReSkate", "0.9.1", "aaaaaaa", null)), Entry());
-        Check("Every kind of download offer links to its release notes", switchView.Links?.Any(l => l.Action == LinkAction.OpenUrl) == true);
+        Check("Switching editions stays a big tile, not a small button", switchView.Tile.Action == TileAction.DownloadAndInstall && switchView.Links?.Any(l => l.Action == LinkAction.ShowUpdateDialog) != true);
 
         var offline = Home(Folder(Tournament("0.9.2")), Entry(), OnlineStatus.Unavailable);
         Check("Offline offers a way to try again", offline.Links?.Any(l => l is { Text: "Check again", Action: LinkAction.CheckAgain }) == true);
@@ -148,8 +149,24 @@ internal static class ComfortTests
             Home(Folder(Tournament("0.9.2"), new BackupInfo(backup.Path, backup.Created, null)), Entry()).Links?.Any(l => l.Text == "Restore backup") == true);
         var backupOfOlder = new BackupInfo(backup.Path, backup.Created, Tournament("0.9.0"));
         var updateWithBackup = Home(Folder(Tournament("0.9.1"), backupOfOlder), Entry());
-        Check("When an update is on offer, the big blue UPDATE tile is the way forward, not a small restore button",
-            updateWithBackup.Tile is { Title: "UPDATE", Enabled: true } && updateWithBackup.Links?.Any(l => l.Action == LinkAction.RestorePrevious) != true);
+        Check("Update available and Restore sit side by side, update first, with PLAY as the big tile",
+            updateWithBackup.Tile.Title == "PLAY" && updateWithBackup.Links is { Count: 2 } sideBySide
+            && sideBySide[0].Action == LinkAction.ShowUpdateDialog && sideBySide[1].Action == LinkAction.RestorePrevious,
+            string.Join(" | ", updateWithBackup.Links?.Select(l => l.Text) ?? Array.Empty<string>()));
+
+        Section("The update dialog");
+        var installedOld = Tournament("0.9.1");
+        var dialog = UpdateAdvisor.DescribeUpdateDialog(installedOld, Entry("2026-10-25", "Smoother physics"), backupsOn: true, Today);
+        Check("It has an upper-case title and two buttons", dialog is { Title: "UPDATE AVAILABLE", ConfirmText: "UPDATE", CancelText: "NOT NOW" });
+        Check("It says the current version is out of date and names the new one",
+            dialog.Paragraphs[0].Contains("Your Trainer 0.9.1 (Tournament) is out of date") && dialog.Paragraphs[0].Contains("0.9.2 (Tournament)") && dialog.Paragraphs[0].Contains("published 3 days ago"), dialog.Paragraphs[0]);
+        Check("It shows what's new when there is a note", dialog.Paragraphs.Any(p => p == "What's new: Smoother physics"));
+        Check("It says you can keep playing, and that the old files are backed up",
+            dialog.Paragraphs[^1].Contains("keep playing") && dialog.Paragraphs[^1].Contains("backed up first"), dialog.Paragraphs[^1]);
+        Check("With backups off it says so instead of promising one",
+            UpdateAdvisor.DescribeUpdateDialog(installedOld, Entry(), backupsOn: false).Paragraphs[^1].Contains("Backups are turned off"));
+        Check("Without a date or note those lines are left out",
+            UpdateAdvisor.DescribeUpdateDialog(installedOld, Entry(), true).Paragraphs is { Count: 2 } plain && !plain[0].Contains("published"));
         Check("No backup, no restore button", Home(Folder(Tournament("0.9.2")), Entry()).Links?.Any(l => l.Action == LinkAction.RestorePrevious) != true);
 
         var broken = Home(new InstallFolderInfo(@"C:\Games\ReSkate", false, false, false, false, null, false, false), Entry());

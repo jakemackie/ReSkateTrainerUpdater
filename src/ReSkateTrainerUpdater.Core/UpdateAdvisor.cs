@@ -248,17 +248,18 @@ public static class UpdateAdvisor
         var links = new List<CardLink>();
         if (c.Online == OnlineStatus.Unavailable) links.Add(new CardLink("Check again", LinkAction.CheckAgain));
 
-        string? releaseUrl = c.App is { } app ? app.Entry.Url : c.Offer is { CanDownload: true, Entry: { } entry } ? entry.Url : null;
-        if (OnlineSource.ReleasePageUrl(releaseUrl) is { } page) links.Add(new CardLink("Release notes", LinkAction.OpenUrl, page));
+        // A newer Trainer doesn't take over the big tile: that stays PLAY. A small button opens the dialog that explains it.
+        if (c.App is null && c.Offer is { Kind: OfferKind.Update, Entry: not null } && c.FolderInfo is { HasLauncher: true })
+            links.Add(UpdateLink);
 
-        // When a newer version is on offer, the big blue UPDATE tile is the way forward again, so no small undo button beside it.
-        if (c.App is null && c.Offer?.Kind != OfferKind.Update && RestoreLink(c.FolderInfo) is { } restore) links.Add(restore);
+        if (c.App is null && RestoreLink(c.FolderInfo) is { } restore) links.Add(restore);
         if (view.Severity == Severity.Error) links.Add(ReportLink);
 
         return links.Count == 0 ? view : view with { Links = links.Take(HomeView.MaxLinks).ToList() };
     }
 
     private static readonly CardLink ReportLink = new("Report a problem", LinkAction.ReportProblem);
+    private static readonly CardLink UpdateLink = new("Update available", LinkAction.ShowUpdateDialog);
 
     // Offered when an earlier install left a backup whose files differ from what is installed now.
     private static CardLink? RestoreLink(InstallFolderInfo? folder)
@@ -342,7 +343,10 @@ public static class UpdateAdvisor
             case OfferKind.Update when entry is not null && installed is not null:
                 return Home("UPDATE", Severity.Highlight, "Update available",
                     $"{installed.TrainerVersion} → {entry.TrainerText}",
-                    new ActionTile("UPDATE", $"{installed.TrainerVersion} → {entry.Version}", TileStyle.Primary, TileAction.DownloadAndInstall),
+                    // PLAY stays the big tile. The update is behind the "Update available" button. Without a launcher there is
+                    // nothing to play, and the blue UPDATE tile is the only way forward.
+                    PlayOrIdle(folder, "Start ReSkate",
+                        new ActionTile("UPDATE", $"{installed.TrainerVersion} → {entry.Version}", TileStyle.Primary, TileAction.DownloadAndInstall)),
                     Rows(folderRow, entry, Severity.Highlight, c.Now));
 
             case OfferKind.SwitchEdition when entry is not null && installed is not null:
@@ -478,7 +482,7 @@ public static class UpdateAdvisor
         if (result.Severity == Severity.Error) links.Add(ReportLink);
         foreach (var existing in view.Links ?? Array.Empty<CardLink>())
         {
-            if (!links.Contains(existing) && links.All(l => l.Action != existing.Action || existing.Action == LinkAction.OpenUrl))
+            if (!links.Contains(existing) && links.All(l => l.Action != existing.Action))
                 links.Add(existing);
         }
 
@@ -617,6 +621,25 @@ public static class UpdateAdvisor
 
     // ---------- Restoring, switching, closing and playing ----------
 
+    /// <summary>
+    /// The dialog behind the "Update available" button: your Trainer is out of date, this newer one is available, and you can
+    /// keep playing or update now.
+    /// </summary>
+    public static ModalView DescribeUpdateDialog(ReSkateVersion installed, ManifestEntry latest, bool backupsOn, DateTimeOffset? now = null)
+    {
+        var paragraphs = new List<string>
+        {
+            $"Your Trainer {installed.TrainerText} is out of date. A newer version is available: {latest.TrainerText}, " +
+            $"{ByteSize.Format(latest.SizeBytes)}" +
+            (ReleaseDate.Describe(latest.Published, now ?? DateTimeOffset.UtcNow) is { } ago ? $", published {ago}." : "."),
+        };
+        if (latest.Notes is { Length: > 0 } notes) paragraphs.Add($"What's new: {notes}");
+        paragraphs.Add(backupsOn
+            ? "You can keep playing on your current version. If you update, your current files are backed up first, so you can go back."
+            : "You can keep playing on your current version. Backups are turned off, so if you update your current files can't be restored afterwards.");
+        return new ModalView("UPDATE AVAILABLE", paragraphs, "UPDATE", "NOT NOW");
+    }
+
     /// <summary>The question before putting an earlier backup back.</summary>
     public static string DescribeRestorePrompt(BackupInfo backup)
     {
@@ -631,7 +654,7 @@ public static class UpdateAdvisor
         {
             case InstallOutcome.Installed:
                 string what = backup.Version is { HasTrainer: true } v ? "Trainer " + v.TrainerText : "your previous files";
-                // No follow-up tile: the screen's own big tile stays, so a newer version is still one blue UPDATE click away.
+                // No follow-up tile: the screen's own big tile stays (PLAY).
                 return new Advice($"Went back to {what}. The files it replaced are saved too, in case you change your mind.", Severity.Good,
                     Links: BackupLinks(result));
 

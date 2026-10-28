@@ -259,10 +259,17 @@ game artwork that belongs to Electronic Arts and Full Circle, credited in `THIRD
 can't be read, `Backdrop` paints a dusk landscape in code instead.
 
 **The card's small buttons.** Under the status card's text is a row of up to three small buttons (**Check again**,
-**Release notes**, **Restore ...**, **Open backup folder**, **Report a problem**). They are ordinary `SquareButton`s laid
+**Update available**, **Restore ...**, **Open backup folder**, **Report a problem**). They are ordinary `SquareButton`s laid
 over the card by `LayoutLinkButtons`, not drawn by the card, so each is a real focusable control with its own name. The card
 only reserves room for them (`StatusCard.LinkRowHeight`). `HomeView.Links` says which, and what each does (`LinkAction`);
 the form handles the click, and only opens a web page if `OnlineSource.IsTrustedPageUrl` allows it.
+
+**The update dialog.** **Update available** is what a newer Trainer shows instead of taking the big tile, which stays PLAY.
+It calls `UpdaterForm.ShowUpdateDialog`, which snapshots the window (`DrawToBitmap`) and hands `ModalOverlay` that picture and a
+`ModalView` from `UpdateAdvisor.DescribeUpdateDialog`. The overlay is a control the size of the window, on top of the others: it
+paints the snapshot dimmed and a card in the middle, appears and disappears at once, and takes the keyboard (Enter is UPDATE,
+Escape is NOT NOW, acted on at key-up). It answers `WM_NCHITTEST` with "transparent" over the minimise and close buttons so
+they keep working. UPDATE runs the same `OnlineInstallAsync` as any download.
 
 **Screen readers.** Every custom control gives itself a name and role through `BufferedControl.Describe`: the tiles and
 buttons are push buttons, the backup option is a check box that says whether it is on, and the status card is text. A
