@@ -1,1 +1,1 @@
-Behind-the-scenes release: faster builds and checks. Nothing changes in the app.
+Smaller download: app updates are now about 37 MB instead of 61 MB.
