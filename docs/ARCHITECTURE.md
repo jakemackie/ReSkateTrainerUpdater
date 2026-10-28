@@ -208,8 +208,8 @@ The workflows are built to be quick. CI runs its jobs side by side (`test`, `pac
 arrives, and does not install the .NET SDK because GitHub's runner image already has one (`.github/actions/dotnet-8`
 installs it only if the image ever loses it; `global.json` keeps every machine on SDK 8). Downloading every published zip
 to check it (`verify`) is its own workflow, run when `latest.json` changes and weekly. Windows runners are needed for the
-app, the installer and `verify`; the `linux-tests` job is an experiment to see whether the tests could run on a faster,
-cheaper Linux runner instead. The wizard pictures are drawn by
+app, the installer and `verify`. The tests also run on Linux (`linux-tests`, about 25 s), where the few checks that need
+Windows file locking skip themselves; the Windows `test` job still runs them. The wizard pictures are drawn by
 `installer/make-wizard-images.ps1` from the app's own icon and fonts.
 
 ## Updating the app itself

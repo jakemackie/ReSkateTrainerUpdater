@@ -38,11 +38,10 @@ jobs:
         shell: pwsh
         run: ./scripts/build-release.ps1
 
-  # An experiment, and it can't fail the build: do the tests pass on Linux too? Linux runners start faster, so if they
-  # do, the `test` job could move there. Look at this job's result before relying on it.
+  # The same checks on Linux. It costs no extra time (the package job is the slow one), and the code is meant to build and
+  # pass anywhere. The few checks that need Windows (file locking) say "skip" here and still run in the test job.
   linux-tests:
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/dotnet-8

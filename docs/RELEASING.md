@@ -37,8 +37,8 @@ release notes. Building the setup needs Inno Setup 6, which GitHub's Windows run
    second pair the same way, list its public key too, and keep that private key offline as a spare. To sign a manifest
    change yourself, pass `--key-file <path>` to `add`, `set-app`, `remove` or `sign`.
 4. **Optional: protect `main`.** Go to Settings → Branches and add a rule that requires the CI check to pass
-   before merging. CI has three jobs that run side by side (`test`, `package`, and an informational `linux-tests`). If you
-   require checks, require `test` and `package`. The `Verify latest.json` workflow (`verify-manifest.yml`) downloads every
+   before merging. CI has three jobs that run side by side (`test`, `package` and `linux-tests`). If you
+   require checks, require all three. The `Verify latest.json` workflow (`verify-manifest.yml`) downloads every
    published zip and checks it; it runs when `latest.json` changes and every Monday, not on every push.
 
 ## Releasing a new version of the app
