@@ -22,16 +22,55 @@ internal sealed class HeaderBar : BufferedControl
     private ChipView _creator = new("", "", Severity.Neutral, ShowDot: false);
     private ChipView _status = new("", "", Severity.Neutral);
 
+    /// <summary>Raised when the GitHub status chip is clicked: the user wants the online check run again.</summary>
+    public event EventHandler? StatusClick;
+
+    public HeaderBar()
+    {
+        TabStop = true;
+    }
+
     public void SetCreator(ChipView chip)
     {
         _creator = chip;
+        AccessibleRole = AccessibleRole.PushButton;
+        AccessibleDescription = $"{chip.Title}. {chip.Subtitle}";
         Invalidate();
     }
 
     public void SetStatus(ChipView chip)
     {
         _status = chip;
+        Describe($"{chip.Title}. {chip.Subtitle}. Press to check GitHub again.", AccessibleRole.PushButton, AccessibleDescription);
         Invalidate();
+    }
+
+    // The status chip is the second of the two cards; its picture and text block are one clickable area.
+    private Rectangle StatusBounds
+    {
+        get
+        {
+            float chipWidth = S(PictureSize + TextBlockWidth);
+            return new Rectangle((int)(chipWidth + S(ChipGap)), 0, (int)chipWidth, (int)S(PictureSize));
+        }
+    }
+
+    /// <summary>True if a point (in this control's own coordinates) is over the status chip, which is a button.</summary>
+    public bool IsOverStatus(Point point) => StatusBounds.Contains(point);
+
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        Cursor = IsOverStatus(e.Location) ? Cursors.Hand : Cursors.Default;
+        base.OnMouseMove(e);
+    }
+
+    protected override void OnClick(EventArgs e)
+    {
+        // A click from the keyboard or a screen reader has no position, and means the same thing.
+        var cursor = PointToClient(Cursor.Position);
+        if (!ClientRectangle.Contains(cursor) || IsOverStatus(cursor))
+            StatusClick?.Invoke(this, EventArgs.Empty);
+        base.OnClick(e);
     }
 
     protected override void OnPaint(PaintEventArgs e)
@@ -53,6 +92,7 @@ internal sealed class HeaderBar : BufferedControl
             _appIconSize = picture;
         }
         DrawChip(g, chipWidth + S(ChipGap), _status, _appIcon);
+        DrawFocusRing(g, StatusBounds);
 
         // The wordmark: tilted a little, with a soft shadow, like the launcher's.
         var state = g.Save();

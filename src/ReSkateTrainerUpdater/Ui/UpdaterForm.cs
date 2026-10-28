@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using ReSkateTrainerUpdater.Core;
 using ReSkateTrainerUpdater.Ui.Controls;
 
@@ -29,6 +30,10 @@ internal sealed class UpdaterForm : Form, IBackdropHost
         Description = "Keeps a copy of your old files, just in case.",
     };
     private readonly SquareButton _logButton = new() { Text = "ACTIVITY LOG", Dark = true };
+    private readonly SquareButton _copyLogButton = new() { Text = "COPY LOG", Dark = true, Visible = false };
+    private readonly SquareButton _reportButton = new() { Text = "REPORT A PROBLEM", Dark = true, Visible = false };
+    private readonly SquareButton[] _linkButtons = Enumerable.Range(0, HomeView.MaxLinks)
+        .Select(_ => new SquareButton { Compact = true, Visible = false }).ToArray();
     private readonly WindowButtons _windowButtons = new();
     private readonly string _version = typeof(UpdaterForm).Assembly.GetName().Version?.ToString(3) ?? "";
 
@@ -43,6 +48,7 @@ internal sealed class UpdaterForm : Form, IBackdropHost
     // The ReSkate folder.
     private string? _folder;
     private InstallFolderInfo? _folderInfo;
+    private InstallFolderInfo? _lastFolderInfo;
     private bool _checkingFolder;
     private int _folderGeneration;
 
@@ -52,6 +58,14 @@ internal sealed class UpdaterForm : Form, IBackdropHost
     private OnlineStatus _online = OnlineStatus.Checking;
     private OnlineOffer _offer = OnlineOffer.Nothing;
     private AppOffer? _appOffer;
+    private bool _checkingOnline;
+
+    // A ReSkate folder found on this PC while the user hasn't chosen one yet.
+    private string? _suggestedFolder;
+
+    // Programs found using the game's files when an install was blocked, and what to run again once they're closed.
+    private enum Retry { Install, Restore }
+    private Retry _retry;
 
     // What the big tile does right now, kept from the last time the screen was drawn.
     private TileAction _tileAction = TileAction.None;
@@ -84,6 +98,7 @@ internal sealed class UpdaterForm : Form, IBackdropHost
             Math.Min((int)(DesignWidth * k), area.Width - (int)(40 * k)),
             Math.Min((int)(DesignHeight * k), area.Height - (int)(40 * k)));
         StartPosition = FormStartPosition.CenterScreen;
+        RestoreWindowPosition();
 
         if (AppIcon.Load() is { } icon) Icon = icon;
 
@@ -101,6 +116,10 @@ internal sealed class UpdaterForm : Form, IBackdropHost
         _zipTile.ClearClick += (_, _) => { if (!_installing) ClearZipByUser(); };
         _actionTile.Click += async (_, _) => await OnTileClickAsync();
         _logButton.Click += (_, _) => ToggleLog();
+        _copyLogButton.Click += (_, _) => CopyLog();
+        _reportButton.Click += (_, _) => ReportProblem();
+        _header.StatusClick += (_, _) => { _ = RefreshOnlineAsync(); };
+        foreach (var button in _linkButtons) button.Click += async (_, _) => await OnLinkClickAsync(button);
         _windowButtons.MinimizeClick += (_, _) => WindowState = FormWindowState.Minimized;
         _windowButtons.CloseClick += (_, _) => Close();
         _backupRow.CheckedChanged += (_, _) =>
@@ -150,8 +169,43 @@ internal sealed class UpdaterForm : Form, IBackdropHost
         // One quiet request for latest.json. Any failure just leaves the screen as it would be offline.
         _ = CheckOnlineAsync();
 
-        // Show which version is already installed in the folder remembered from last time.
+        // Show which version is already installed in the folder remembered from last time, or look for one.
         if (_folder is not null) _ = InspectFolderAsync(_folder);
+        else _ = FindFolderAsync();
+    }
+
+    // Looks in the usual places for a ReSkate folder, so a first-time user is offered one instead of an empty picker.
+    private async Task FindFolderAsync()
+    {
+        string? found = await Task.Run(() => ReSkateLocator.Find(ReSkateLocator.DefaultRoots()));
+        if (IsDisposed || _folder is not null || found is null) return;
+
+        _suggestedFolder = found;
+        Log("Found what looks like a ReSkate folder: " + found);
+        Render();
+    }
+
+    // Opens where it was last closed, as long as that is still on a screen.
+    private void RestoreWindowPosition()
+    {
+        if (_settings is not { WindowLeft: { } left, WindowTop: { } top }) return;
+
+        var wanted = new Rectangle(left, top, Width, Height);
+        if (!Screen.AllScreens.Any(s => s.WorkingArea.Contains(wanted.Left + 60, wanted.Top + 20))) return;
+
+        StartPosition = FormStartPosition.Manual;
+        Location = new Point(left, top);
+    }
+
+    protected override void OnFormClosing(FormClosingEventArgs e)
+    {
+        if (WindowState == FormWindowState.Normal)
+        {
+            _settings.WindowLeft = Left;
+            _settings.WindowTop = Top;
+            _settings.Save();
+        }
+        base.OnFormClosing(e);
     }
 
     protected override void OnFormClosed(FormClosedEventArgs e)
@@ -184,12 +238,14 @@ internal sealed class UpdaterForm : Form, IBackdropHost
 
         foreach (Control control in new Control[]
                  {
-                     _header, _statusCard, _logCard, _backupRow, _logButton,
+                     _header, _statusCard, _logCard, _backupRow, _logButton, _copyLogButton, _reportButton,
                      _folderTile, _zipTile, _actionTile, _windowButtons,
-                 })
+                 }.Concat(_linkButtons))
         {
             Controls.Add(control);
         }
+        // The card's own buttons sit on top of the card.
+        foreach (var button in _linkButtons) button.BringToFront();
         _windowButtons.BringToFront();
         LayoutAll();
     }
@@ -227,9 +283,43 @@ internal sealed class UpdaterForm : Form, IBackdropHost
         _backupRow.Bounds = new Rectangle(X(MarginLeft), _statusCard.Bottom + X(Gap), X(leftWidth), X(72));
 
         // Bottom left: the log button, like the launcher's CHANGELOGS. The log itself opens over the status card.
+        // While the log is open, two more buttons sit beside it: one copies the log, the other reports a problem.
         float buttonHeight = 52f;
         _logButton.Bounds = R(MarginLeft, h - MarginBottom - buttonHeight, 190, buttonHeight);
+        _copyLogButton.Bounds = R(MarginLeft + 190 + Gap, h - MarginBottom - buttonHeight, 160, buttonHeight);
+        _reportButton.Bounds = R(MarginLeft + 190 + Gap + 160 + Gap, h - MarginBottom - buttonHeight, 250, buttonHeight);
         _logCard.Bounds = R(MarginLeft, cardTop, columnX - MarginLeft - 32, h - MarginBottom - buttonHeight - Gap - cardTop);
+
+        LayoutLinkButtons(X);
+    }
+
+    // The status card's small buttons, in a row along the bottom of the card. Any that don't fit are left out.
+    private void LayoutLinkButtons(Func<float, int> x)
+    {
+        var links = _homeView?.Links ?? Array.Empty<CardLink>();
+        int left = _statusCard.Left + x(22);
+        int right = _statusCard.Right - x(20);
+        int buttonHeight = x(34);
+        int top = _statusCard.Bottom - x(StatusCard.LinkRowHeight) + x(8);
+
+        for (int i = 0; i < _linkButtons.Length; i++)
+        {
+            var button = _linkButtons[i];
+            bool shown = false;
+            if (i < links.Count && _statusCard.Visible)
+            {
+                button.Text = links[i].Text;
+                button.Tag = links[i];
+                int width = button.PreferredWidth();
+                if (left + width <= right)
+                {
+                    button.Bounds = new Rectangle(left, top, width, buttonHeight);
+                    left += width + x(Gap / 2);
+                    shown = true;
+                }
+            }
+            button.Visible = shown;
+        }
     }
 
     protected override void OnSizeChanged(EventArgs e)
@@ -301,14 +391,41 @@ internal sealed class UpdaterForm : Form, IBackdropHost
         _logCard.Visible = show;
         _statusCard.Visible = !show;
         _backupRow.Visible = !show;
+        _copyLogButton.Visible = show;
+        _reportButton.Visible = show;
+        _copyLogButton.Text = "COPY LOG";
         _logButton.Text = show ? "BACK TO STATUS" : "ACTIVITY LOG";
+        LayoutAll(); // the card's own buttons only show with the card
+    }
+
+    // The log as text, with the app and Windows version on top so a pasted log says where it came from.
+    private void CopyLog()
+    {
+        string text = UpdateAdvisor.DescribeLogHeader(_version, RuntimeInformation.OSDescription) + "\r\n" + _log.Text;
+        try
+        {
+            Clipboard.SetText(text);
+            _copyLogButton.Text = "COPIED";
+        }
+        catch (ExternalException)
+        {
+            // Another program has the clipboard open. Nothing to do but let them press it again.
+            _copyLogButton.Text = "TRY AGAIN";
+        }
     }
 
     // Without a title bar, the window is moved by dragging any empty part of it, like the launcher.
     private void MakeDraggable(Control control)
     {
         if (control is Form or TableLayoutPanel or Panel or HeaderBar or StatusCard)
-            control.MouseDown += (_, e) => { if (e.Button == MouseButtons.Left) NativeMethods.DragWindow(Handle); };
+        {
+            control.MouseDown += (_, e) =>
+            {
+                // The GitHub chip in the header is a button, so it keeps its clicks.
+                if (control is HeaderBar header && header.IsOverStatus(e.Location)) return;
+                if (e.Button == MouseButtons.Left) NativeMethods.DragWindow(Handle);
+            };
+        }
         foreach (Control child in control.Controls) MakeDraggable(child);
     }
 
@@ -458,7 +575,14 @@ internal sealed class UpdaterForm : Form, IBackdropHost
         };
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
 
-        _folder = dialog.SelectedPath;
+        ChooseFolder(dialog.SelectedPath);
+    }
+
+    private void ChooseFolder(string path)
+    {
+        _folder = path;
+        _lastFolderInfo = null;
+        _suggestedFolder = null;
         _result = null;
         _settings.LastFolder = _folder;
         _settings.Save();
@@ -487,6 +611,7 @@ internal sealed class UpdaterForm : Form, IBackdropHost
 
         _checkingFolder = false;
         _folderInfo = info;
+        if (info is not null) _lastFolderInfo = info;
         _offer = UpdateAdvisor.DescribeOnlineOffer(_manifest, _folderInfo);
         Render();
     }
@@ -494,13 +619,14 @@ internal sealed class UpdaterForm : Form, IBackdropHost
     // ---------- Drawing the screen ----------
 
     private UpdateContext CurrentContext() =>
-        new(_checkingZip, _zipPath, _zipProblem, _package, _folder, _checkingFolder, _folderInfo, _offer, _online, _appOffer);
+        new(_checkingZip, _zipPath, _zipProblem, _package, _folder, _checkingFolder, _folderInfo, _offer, _online, _appOffer, _suggestedFolder);
 
     // Draws everything from the current state. The decisions are made in UpdateAdvisor.
     private void Render()
     {
         HomeView view = _busyView ?? UpdateAdvisor.DescribeHome(CurrentContext());
-        if (_busyView is null && _result is { } result) view = UpdateAdvisor.WithResult(view, result);
+        // While the folder is being looked at again after an install, what was known before still says whether PLAY can start it.
+        if (_busyView is null && _result is { } result) view = UpdateAdvisor.WithResult(view, result, _folderInfo ?? _lastFolderInfo);
 
         _homeView = view;
         _statusCard.Show(view);
@@ -526,9 +652,29 @@ internal sealed class UpdaterForm : Form, IBackdropHost
 
     // ---------- Online updates ----------
 
+    // Only on start-up and when the user asks (the Check again button, or a click on the GitHub chip). Never on a timer.
+    private async Task RefreshOnlineAsync()
+    {
+        if (_installing || _checkingOnline) return;
+
+        _online = OnlineStatus.Checking;
+        Render();
+        await CheckOnlineAsync();
+    }
+
     private async Task CheckOnlineAsync()
     {
-        var result = await TrainerDownloader.FetchManifestAsync(_http);
+        if (_checkingOnline) return;
+        _checkingOnline = true;
+        ManifestReadResult result;
+        try
+        {
+            result = await TrainerDownloader.FetchManifestAsync(_http);
+        }
+        finally
+        {
+            _checkingOnline = false;
+        }
         if (IsDisposed) return;
 
         _manifest = result.Manifest;
@@ -559,7 +705,163 @@ internal sealed class UpdaterForm : Form, IBackdropHost
             case TileAction.UpdateApp:
                 await UpdateAppAsync();
                 break;
+            case TileAction.UseSuggestedFolder when _suggestedFolder is { } suggested:
+                ChooseFolder(suggested);
+                break;
+            case TileAction.Launch:
+                Launch();
+                break;
+            case TileAction.CloseGameAndRetry:
+                await CloseGameAndRetryAsync();
+                break;
         }
+    }
+
+    // ---------- The small buttons on the status card ----------
+
+    private async Task OnLinkClickAsync(SquareButton button)
+    {
+        if (_installing || button.Tag is not CardLink link) return;
+        switch (link.Action)
+        {
+            case LinkAction.CheckAgain:
+                await RefreshOnlineAsync();
+                break;
+            case LinkAction.RestorePrevious:
+                await RestoreAsync();
+                break;
+            case LinkAction.ReportProblem:
+                ReportProblem();
+                break;
+            case LinkAction.OpenFolder when link.Target is { } folder && Directory.Exists(folder):
+                OpenWithWindows(folder);
+                break;
+            case LinkAction.OpenUrl when OnlineSource.IsTrustedPageUrl(link.Target):
+                OpenWithWindows(link.Target!);
+                break;
+        }
+    }
+
+    // Hands a folder or an address to Windows, which opens it in Explorer or the browser. Only trusted addresses get here.
+    private void OpenWithWindows(string target)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo(target) { UseShellExecute = true })?.Dispose();
+        }
+        catch (Exception ex) when (ex is Win32Exception or InvalidOperationException)
+        {
+            Log("Couldn't open " + target + ": " + ex.Message);
+        }
+    }
+
+    private void ReportProblem() =>
+        OpenWithWindows(UpdateAdvisor.DescribeProblemReportUrl(_version, RuntimeInformation.OSDescription));
+
+    private void Launch()
+    {
+        if (_folder is not { } folder) return;
+
+        var failure = GameLauncher.Start(folder, out var detail);
+        if (failure == LaunchFailure.None)
+        {
+            Log($"Started {ReSkateFiles.Launcher}");
+            _result = UpdateAdvisor.DescribeLaunched();
+        }
+        else
+        {
+            Log($"Couldn't start {ReSkateFiles.Launcher}: {detail ?? failure.ToString()}");
+            _result = UpdateAdvisor.DescribeLaunchFailure(failure, detail);
+        }
+        Render();
+    }
+
+    /// <summary>
+    /// The install was blocked by the game. Looks again at what is running (the user may have closed it already), asks before
+    /// closing anything, and then carries on with the install that was waiting.
+    /// </summary>
+    private async Task CloseGameAndRetryAsync()
+    {
+        if (_installing || _folder is not { } folder) return;
+
+        _installing = true;
+        var running = await Task.Run(() => GameProcesses.FindUsing(folder));
+        _installing = false;
+
+        if (running.Count > 0)
+        {
+            if (!Confirm(UpdateAdvisor.DescribeCloseGamePrompt(running))) return;
+
+            _installing = true;
+            _busyView = UpdateAdvisor.DescribeBusy(BusyStage.Closing, string.Join(", ", running.Select(p => p.Name)));
+            Render();
+            Log("Closing " + string.Join(", ", running.Select(p => p.Name)));
+
+            var stillRunning = await Task.Run(() => GameProcesses.Close(running, TimeSpan.FromSeconds(6)));
+
+            _installing = false;
+            _busyView = null;
+            if (stillRunning.Count > 0)
+            {
+                Log("Couldn't close " + string.Join(", ", stillRunning.Select(p => p.Name)));
+                _result = UpdateAdvisor.DescribeCloseGameFailed(stillRunning);
+                Render();
+                return;
+            }
+            Log("Closed.");
+        }
+
+        // Whatever was waiting goes ahead, without asking the same questions twice.
+        if (_retry == Retry.Restore) await RestoreAsync(confirm: false);
+        else await InstallAsync(clearLog: false, confirm: false);
+    }
+
+    /// <summary>Puts back the files the last install replaced. The files being replaced are saved first, so it can be undone.</summary>
+    private async Task RestoreAsync(bool confirm = true)
+    {
+        if (_installing || _folder is not { } folder || _folderInfo?.PreviousBackup is not { } backup) return;
+        if (confirm && !Confirm(UpdateAdvisor.DescribeRestorePrompt(backup))) return;
+
+        _installing = true;
+        _retry = Retry.Restore;
+        _result = null;
+        _log.Clear();
+        _busyView = UpdateAdvisor.DescribeBusy(BusyStage.Installing, backup.Version?.DisplayName ?? "your previous files");
+        Render();
+        Log($"Putting back the files saved in {backup.Path}");
+
+        try
+        {
+            var progress = new Progress<string>(Log);
+            var (result, running) = await RunInstallJobAsync(() => TrainerInstaller.Restore(folder, backup, progress), folder);
+
+            Log("");
+            LogResult(result);
+            _result = UpdateAdvisor.DescribeRestoreResult(result, backup, running);
+        }
+        catch (Exception ex)
+        {
+            Log("Error: " + ex.Message);
+            _result = new Advice("Something went wrong: " + ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _installing = false;
+            _busyView = null;
+        }
+
+        _ = InspectFolderAsync(folder); // show the version that is installed now, and the backup it made
+        Render();
+    }
+
+    // Runs an install on a worker thread. If the game blocked it, also finds out which programs to name.
+    private static async Task<(InstallResult Result, IReadOnlyList<RunningProcess> Running)> RunInstallJobAsync(Func<InstallResult> job, string folder)
+    {
+        var result = await Task.Run(job);
+        IReadOnlyList<RunningProcess> running = Array.Empty<RunningProcess>();
+        if (result is { Outcome: InstallOutcome.Blocked, BlockedBy: BlockReason.FilesInUse })
+            running = await Task.Run(() => GameProcesses.FindUsing(folder));
+        return (result, running);
     }
 
     /// <summary>
@@ -752,7 +1054,7 @@ internal sealed class UpdaterForm : Form, IBackdropHost
     // ---------- Installing ----------
 
     /// <summary>Installs the current package. Returns false if it didn't start, for example when the user said no.</summary>
-    private async Task<bool> InstallAsync(bool clearLog = true)
+    private async Task<bool> InstallAsync(bool clearLog = true, bool confirm = true)
     {
         if (_installing) return false;
         if (!UpdateAdvisor.Evaluate(CurrentContext()).CanInstall) return false;
@@ -760,26 +1062,33 @@ internal sealed class UpdaterForm : Form, IBackdropHost
 
         bool backup = _backupRow.Checked;
 
-        // Ask before anything unusual.
-        if (UpdateAdvisor.IsDowngrade(folderInfo.Installed, incoming) &&
-            !Confirm($"This zip ({incoming.TrainerText}) is older than the version you have ({folderInfo.Installed!.TrainerText}).\r\n\r\nInstall the older version anyway?"))
+        // Ask before anything unusual. Not again when this is a retry the user already said yes to.
+        if (confirm)
         {
-            return false;
-        }
+            if (UpdateAdvisor.IsDowngrade(folderInfo.Installed, incoming) &&
+                !Confirm($"This zip ({incoming.TrainerText}) is older than the version you have ({folderInfo.Installed!.TrainerText}).\r\n\r\nInstall the older version anyway?"))
+            {
+                return false;
+            }
 
-        if (!folderInfo.HasLauncher && !folderInfo.IsEmpty &&
-            !Confirm($"There's no ReSkate in this folder (no {ReSkateFiles.Launcher}) and it isn't empty.\r\n\r\nInstall ReSkate Trainer into it anyway?"))
-        {
-            return false;
-        }
+            if (UpdateAdvisor.DescribeEditionSwitchPrompt(folderInfo.Installed, incoming) is { } switchPrompt && !Confirm(switchPrompt))
+                return false;
 
-        if (!backup &&
-            !Confirm("Backups are turned off, so your old files can't be restored afterwards.\r\n\r\nContinue?"))
-        {
-            return false;
+            if (!folderInfo.HasLauncher && !folderInfo.IsEmpty &&
+                !Confirm($"There's no ReSkate in this folder (no {ReSkateFiles.Launcher}) and it isn't empty.\r\n\r\nInstall ReSkate Trainer into it anyway?"))
+            {
+                return false;
+            }
+
+            if (!backup &&
+                !Confirm("Backups are turned off, so your old files can't be restored afterwards.\r\n\r\nContinue?"))
+            {
+                return false;
+            }
         }
 
         _installing = true;
+        _retry = Retry.Install;
         _result = null;
         if (clearLog) _log.Clear();
         _busyView = UpdateAdvisor.DescribeBusy(BusyStage.Installing, incoming.DisplayName);
@@ -792,11 +1101,11 @@ internal sealed class UpdaterForm : Form, IBackdropHost
         {
             // Progress<T> created here posts its reports back to this (UI) thread.
             var progress = new Progress<string>(Log);
-            var result = await Task.Run(() => TrainerInstaller.Install(package.RootFolder, folder, backup, progress));
+            var (result, running) = await RunInstallJobAsync(() => TrainerInstaller.Install(package.RootFolder, folder, backup, progress), folder);
 
             Log("");
             LogResult(result);
-            _result = UpdateAdvisor.DescribeResult(result, incoming);
+            _result = UpdateAdvisor.DescribeResult(result, incoming, running);
             finished = result.Outcome is InstallOutcome.Installed or InstallOutcome.AlreadyUpToDate;
         }
         catch (Exception ex)
@@ -814,7 +1123,7 @@ internal sealed class UpdaterForm : Form, IBackdropHost
         // A finished install is done with its zip: clear it so the screen shows what is installed, not a second Install.
         if (finished) ClearZip();
         Render();
-        _ = InspectFolderAsync(folder); // show the version that is installed now
+        _ = InspectFolderAsync(folder); // show the version that is installed now, and the backup this install made
         return true;
     }
 

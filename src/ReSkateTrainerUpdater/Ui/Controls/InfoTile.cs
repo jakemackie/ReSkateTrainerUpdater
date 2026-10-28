@@ -37,6 +37,7 @@ internal sealed class InfoTile : BufferedControl
         Title = title;
         Subtitle = subtitle;
         Clearable = clearable;
+        Describe($"{title}: {subtitle}", AccessibleRole.PushButton);
         Invalidate();
     }
 

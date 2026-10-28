@@ -95,39 +95,48 @@ public static class UpdateAdvisor
                 : ($"Installed: ReSkate {installed.BaseVersion ?? "?"} (no Trainer yet)", Severity.Neutral);
         }
 
-        if (folder.HasRuntime) return ($"{ReSkateFiles.RuntimeDll} is here but couldn't be read.", Severity.Warning);
-        if (folder.HasLauncher) return ($"{ReSkateFiles.Launcher} is here but {ReSkateFiles.RuntimeDll} is missing.", Severity.Warning);
+        if (folder.HasRuntime) return ("ReSkate is here, but its main file can't be read.", Severity.Warning);
+        if (folder.HasLauncher) return ("ReSkate looks incomplete: its main file is missing.", Severity.Warning);
         if (folder.IsEmpty) return ("Empty folder: this will be a fresh install.", Severity.Neutral);
-        return ("No ReSkate found in this folder yet.", Severity.Warning);
+        return ("No ReSkate in this folder yet.", Severity.Warning);
     }
+
+    /// <summary>"Standard" for the edition with no name, otherwise the edition's own name.</summary>
+    private static string EditionLabel(string? edition) => string.IsNullOrWhiteSpace(edition) ? "Standard" : edition;
 
     // ---------- Online updates ----------
 
     /// <summary>
     /// What the online check offers for this folder. Only offers what latest.json lists:
-    /// an empty or new folder gets the fresh-install edition (Tournament), and an installed Trainer is only
-    /// offered a newer version of its own edition. Plain ReSkate, an unreadable ReSkate.dll, and editions the
-    /// manifest doesn't list get nothing, and the drop zone works as before.
+    /// an empty or new folder gets the fresh-install edition (Tournament), plain ReSkate is offered that same edition
+    /// to add, and an installed Trainer is offered a newer version of its own edition. A Trainer whose edition isn't
+    /// listed (such as the standard one) is told the fresh-install edition exists and may switch to it on purpose,
+    /// but is never moved over automatically. An unreadable ReSkate.dll gets nothing, and the drop zone works as before.
     /// </summary>
     public static OnlineOffer DescribeOnlineOffer(TrainerManifest? manifest, InstallFolderInfo? folder)
     {
         if (manifest is null || folder is null) return OnlineOffer.Nothing;
         if (!folder.Exists || folder.IsSteamSkateFolder) return OnlineOffer.Nothing;
 
+        var fresh = manifest.Find(OnlineSource.FreshInstallEdition);
+
         if (!folder.HasRuntime)
+            return fresh is not null ? new OnlineOffer(OfferKind.FreshInstall, fresh) : OnlineOffer.Nothing;
+
+        // ReSkate.dll is there but couldn't be read: don't guess.
+        if (folder.Installed is not { } installed) return OnlineOffer.Nothing;
+
+        if (!installed.HasTrainer)
+            return fresh is not null ? new OnlineOffer(OfferKind.AddTrainer, fresh) : OnlineOffer.Nothing;
+
+        if (manifest.Find(OnlineSource.EditionKey(installed.Edition)) is { } latest)
         {
-            return manifest.Find(OnlineSource.FreshInstallEdition) is { } fresh
-                ? new OnlineOffer(OfferKind.FreshInstall, fresh)
-                : OnlineOffer.Nothing;
+            return new OnlineOffer(
+                VersionCompare.Compare(installed.TrainerVersion, latest.Version) < 0 ? OfferKind.Update : OfferKind.UpToDate,
+                latest);
         }
 
-        // ReSkate.dll is there but couldn't be read, or it is plain ReSkate: don't guess.
-        if (folder.Installed is not { HasTrainer: true } installed) return OnlineOffer.Nothing;
-        if (manifest.Find(OnlineSource.EditionKey(installed.Edition)) is not { } latest) return OnlineOffer.Nothing;
-
-        return new OnlineOffer(
-            VersionCompare.Compare(installed.TrainerVersion, latest.Version) < 0 ? OfferKind.Update : OfferKind.UpToDate,
-            latest);
+        return fresh is not null ? new OnlineOffer(OfferKind.SwitchEdition, fresh) : OnlineOffer.Nothing;
     }
 
     /// <summary>
@@ -214,16 +223,68 @@ public static class UpdateAdvisor
             rows.Add(new StatusRow(text, severity));
         }
         rows.Add(new StatusRow($"New updater: {app.Version} · {ByteSize.Format(app.SizeBytes)}", Severity.Highlight));
+        rows.AddRange(DescriptionRows(app, c.Now));
 
+        // The download is big (it carries .NET inside it), so the tile says how big before anyone clicks.
         return new HomeView("APP UPDATE", Severity.Highlight, "New version of the updater",
-            $"{offer.CurrentVersion} → {app.Version}. The app restarts itself when it's done.", rows,
-            new ActionTile("UPDATE APP", $"{offer.CurrentVersion} → {app.Version}", TileStyle.Primary, TileAction.UpdateApp));
+            $"{offer.CurrentVersion} → {app.Version}. It's a {ByteSize.Format(app.SizeBytes)} download, and the app restarts itself when it's done.", rows,
+            new ActionTile("UPDATE APP", $"{offer.CurrentVersion} → {app.Version} · {ByteSize.Format(app.SizeBytes)}", TileStyle.Primary, TileAction.UpdateApp));
     }
 
-    // No zip chosen: show what the online check found for this folder.
+    // "Published 3 days ago" and "What's new: ...", for whatever latest.json says about a release.
+    private static IEnumerable<StatusRow> DescriptionRows(IPublishedFile file, DateTimeOffset? now)
+    {
+        if (ReleaseDate.Describe(file.Published, now ?? DateTimeOffset.UtcNow) is { } ago)
+            yield return new StatusRow($"Published {ago}", Severity.Neutral);
+        if (file.Notes is { Length: > 0 } notes)
+            yield return new StatusRow($"What's new: {notes}", Severity.Neutral);
+    }
+
+    // No zip chosen: show what the online check found for this folder, with the small buttons that go with it.
     private static HomeView DescribeOnlineHome(UpdateContext c)
     {
+        var view = DescribeOnlineHomeCore(c);
+
+        var links = new List<CardLink>();
+        if (c.Online == OnlineStatus.Unavailable) links.Add(new CardLink("Check again", LinkAction.CheckAgain));
+
+        string? releaseUrl = c.App is { } app ? app.Entry.Url : c.Offer is { CanDownload: true, Entry: { } entry } ? entry.Url : null;
+        if (OnlineSource.ReleasePageUrl(releaseUrl) is { } page) links.Add(new CardLink("Release notes", LinkAction.OpenUrl, page));
+
+        if (c.App is null && RestoreLink(c.FolderInfo) is { } restore) links.Add(restore);
+        if (view.Severity == Severity.Error) links.Add(ReportLink);
+
+        return links.Count == 0 ? view : view with { Links = links.Take(HomeView.MaxLinks).ToList() };
+    }
+
+    private static readonly CardLink ReportLink = new("Report a problem", LinkAction.ReportProblem);
+
+    // Offered when an earlier install left a backup whose files differ from what is installed now.
+    private static CardLink? RestoreLink(InstallFolderInfo? folder)
+    {
+        if (folder is not { Exists: true, HasRuntime: true, PreviousBackup: { } backup }) return null;
+
+        var then = backup.Version;
+        var now = folder.Installed;
+        if (then is { HasTrainer: true } && now is { HasTrainer: true } &&
+            then.TrainerVersion == now.TrainerVersion && then.TrainerBuild == now.TrainerBuild && then.Edition == now.Edition)
+        {
+            return null; // the same release: there's nothing to go back to
+        }
+
+        return new CardLink(then is { HasTrainer: true } ? $"Restore {then.TrainerVersion}" : "Restore backup", LinkAction.RestorePrevious);
+    }
+
+    private static HomeView DescribeOnlineHomeCore(UpdateContext c)
+    {
         if (c.App is { } appOffer) return DescribeAppUpdateHome(c, appOffer);
+
+        if (c.Folder is null && c.SuggestedFolder is { } suggested)
+        {
+            return Home("FOUND", Severity.Highlight, "Found ReSkate on this PC",
+                $"{suggested}\nUse it, or click the folder box on the right to choose a different one.",
+                new ActionTile("USE IT", "Use the folder found", TileStyle.Primary, TileAction.UseSuggestedFolder));
+        }
 
         if (c.Folder is null)
         {
@@ -269,13 +330,25 @@ public static class UpdateAdvisor
                 return Home("READY", Severity.Good, "Ready to install",
                     $"{entry.EditionName} Edition {entry.Version} is on GitHub.",
                     new ActionTile("INSTALL", $"{entry.EditionName} {entry.Version}", TileStyle.Primary, TileAction.DownloadAndInstall),
-                    folderRow, LatestRow(entry, Severity.Highlight));
+                    Rows(folderRow, entry, Severity.Highlight, c.Now));
+
+            case OfferKind.AddTrainer when entry is not null && installed is not null:
+                return Home("READY", Severity.Good, "Add the Trainer",
+                    $"You have ReSkate {installed.BaseVersion ?? "?"} without the Trainer. {entry.EditionName} Edition {entry.Version} is on GitHub.",
+                    new ActionTile("ADD TRAINER", $"{entry.EditionName} {entry.Version}", TileStyle.Primary, TileAction.DownloadAndInstall),
+                    Rows(folderRow, entry, Severity.Highlight, c.Now));
 
             case OfferKind.Update when entry is not null && installed is not null:
                 return Home("UPDATE", Severity.Highlight, "Update available",
                     $"{installed.TrainerVersion} → {entry.TrainerText}",
                     new ActionTile("UPDATE", $"{installed.TrainerVersion} → {entry.Version}", TileStyle.Primary, TileAction.DownloadAndInstall),
-                    folderRow, LatestRow(entry, Severity.Highlight));
+                    Rows(folderRow, entry, Severity.Highlight, c.Now));
+
+            case OfferKind.SwitchEdition when entry is not null && installed is not null:
+                return Home("SWITCH", Severity.Highlight, "Another edition is available",
+                    $"You have the {EditionLabel(installed.Edition)} edition ({installed.TrainerVersion}). The {entry.EditionName} Edition {entry.Version} is on GitHub too, if you want to switch. Your files are backed up first.",
+                    new ActionTile("SWITCH", $"To {entry.EditionName} {entry.Version}", TileStyle.Primary, TileAction.DownloadAndInstall),
+                    Rows(folderRow, entry, Severity.Highlight, c.Now));
 
             case OfferKind.UpToDate when entry is not null && installed is not null:
                 bool ahead = VersionCompare.Compare(installed.TrainerVersion, entry.Version) > 0;
@@ -284,7 +357,7 @@ public static class UpdateAdvisor
                         ? $"You have {installed.TrainerVersion}. The newest published is {entry.TrainerText}."
                         : "You're running the newest version.",
                     new ActionTile("UP TO DATE", "Nothing to install", TileStyle.Success, TileAction.None),
-                    folderRow, LatestRow(entry, Severity.Good));
+                    Rows(folderRow, entry, Severity.Good, c.Now));
         }
 
         // Nothing to offer. Say why, so the screen is never a mystery.
@@ -300,8 +373,8 @@ public static class UpdateAdvisor
         }
         if (installed is null)
         {
-            return Home("HEADS UP", Severity.Warning, "Couldn't read ReSkate.dll",
-                "The file is there but couldn't be read. Drop a Trainer zip to replace it.",
+            return Home("HEADS UP", Severity.Warning, "Couldn't read your ReSkate files",
+                "ReSkate's main file is there but can't be read, so it may be damaged. Reinstall ReSkate, or drop a Trainer zip to replace it.",
                 Idle("INSTALL", "Use a zip"), folderRow);
         }
         if (!installed.HasTrainer)
@@ -317,8 +390,11 @@ public static class UpdateAdvisor
             Idle("NO UPDATE", "Use a zip"), folderRow);
     }
 
-    private static StatusRow LatestRow(ManifestEntry entry, Severity severity) =>
-        new($"Latest: {entry.TrainerText} · {ByteSize.Format(entry.SizeBytes)}", severity);
+    // The folder, the newest published Trainer, and whatever latest.json says about it (when it came out, what is new).
+    private static StatusRow[] Rows(StatusRow folderRow, ManifestEntry entry, Severity severity, DateTimeOffset? now) =>
+        new[] { folderRow, new StatusRow($"Latest: {entry.TrainerText} · {ByteSize.Format(entry.SizeBytes)}", severity) }
+            .Concat(DescriptionRows(entry, now))
+            .ToArray();
 
     /// <summary>The credit card in the top-left corner: who made this tool.</summary>
     public static ChipView DescribeCreator() =>
@@ -356,14 +432,22 @@ public static class UpdateAdvisor
                 return Home("RESTARTING", Severity.Working, "Restarting...", "The new version opens in a moment.",
                     new ActionTile("RESTARTING", what, TileStyle.Primary, TileAction.None, Working: true));
 
+            case BusyStage.Closing:
+                return Home("CLOSING", Severity.Working, "Closing the game...", what,
+                    new ActionTile("CLOSING", "One moment", TileStyle.Primary, TileAction.None, Working: true));
+
             default:
                 return Home("INSTALLING", Severity.Working, "Installing...", "Please don't close the app.",
                     new ActionTile("INSTALLING", what, TileStyle.Primary, TileAction.None, Working: true));
         }
     }
 
-    /// <summary>Puts the outcome of an install or download on the status card, keeping its rows and tile.</summary>
-    public static HomeView WithResult(HomeView view, Advice result)
+    /// <summary>
+    /// Puts the outcome of an install or download on the status card, keeping its rows. The tile stays as it was, unless the
+    /// outcome says what comes next: PLAY once the Trainer is in place (and the folder has a launcher), or CLOSE GAME when the
+    /// game is in the way. The outcome's own buttons come first, then the ones the screen already had.
+    /// </summary>
+    public static HomeView WithResult(HomeView view, Advice result, InstallFolderInfo? folder = null)
     {
         var (pill, headline) = result.Severity switch
         {
@@ -372,7 +456,33 @@ public static class UpdateAdvisor
             Severity.Error => ("PROBLEM", "Something went wrong"),
             _ => ("INFO", "Note"),
         };
-        return view with { Pill = pill, Severity = result.Severity, Headline = headline, Subline = result.Message };
+
+        var tile = result.Next switch
+        {
+            FollowUp.Launch when folder is { HasLauncher: true } =>
+                new ActionTile("PLAY", "Start the ReSkate launcher", TileStyle.Primary, TileAction.Launch),
+            FollowUp.CloseGameAndRetry =>
+                new ActionTile("CLOSE GAME", "Then install again", TileStyle.Primary, TileAction.CloseGameAndRetry),
+            _ => view.Tile,
+        };
+
+        var links = new List<CardLink>(result.Links ?? Array.Empty<CardLink>());
+        if (result.Severity == Severity.Error) links.Add(ReportLink);
+        foreach (var existing in view.Links ?? Array.Empty<CardLink>())
+        {
+            if (!links.Contains(existing) && links.All(l => l.Action != existing.Action || existing.Action == LinkAction.OpenUrl))
+                links.Add(existing);
+        }
+
+        return view with
+        {
+            Pill = pill,
+            Severity = result.Severity,
+            Headline = headline,
+            Subline = result.Message,
+            Tile = tile,
+            Links = links.Count == 0 ? view.Links : links.Take(HomeView.MaxLinks).ToList(),
+        };
     }
 
     /// <summary>The activity-log line after the start-up check of latest.json.</summary>
@@ -441,21 +551,31 @@ public static class UpdateAdvisor
         new($"The downloaded update isn't what was published, so it was not installed. Nothing was changed. {reason}",
             Severity.Error);
 
-    /// <summary>The message shown once an install has finished (or failed).</summary>
-    public static Advice DescribeResult(InstallResult result, ReSkateVersion incoming)
+    /// <summary>
+    /// The message shown once an install has finished (or failed). <paramref name="running"/> names the programs found using
+    /// the game's files when the install was blocked, so the message can say which ones to close.
+    /// </summary>
+    public static Advice DescribeResult(InstallResult result, ReSkateVersion incoming, IReadOnlyList<RunningProcess>? running = null)
     {
         switch (result.Outcome)
         {
             case InstallOutcome.Installed:
-                return new Advice($"Installed {incoming.DisplayName}. Start {ReSkateFiles.Launcher} as usual.", Severity.Good);
+                return new Advice($"Installed {incoming.DisplayName}. Press PLAY to start ReSkate.", Severity.Good,
+                    Next: FollowUp.Launch, Links: BackupLinks(result));
 
             case InstallOutcome.AlreadyUpToDate:
-                return new Advice("You already have this version. Nothing needed changing.", Severity.Good);
+                return new Advice("You already have this version. Nothing needed changing.", Severity.Good, Next: FollowUp.Launch);
 
             case InstallOutcome.Blocked when result.BlockedBy == BlockReason.FolderNotWritable:
                 return new Advice(
                     "The updater isn't allowed to write to that folder. Choose a folder you own, for example C:\\Games\\ReSkate.",
                     Severity.Warning);
+
+            case InstallOutcome.Blocked when running is { Count: > 0 }:
+                return new Advice(
+                    $"{NameList(running)} {(running.Count == 1 ? "is" : "are")} still open and using ReSkate's files. " +
+                    "Close it yourself, or press CLOSE GAME and the updater will close it and carry on. Nothing was changed.",
+                    Severity.Warning, Next: FollowUp.CloseGameAndRetry);
 
             case InstallOutcome.Blocked:
                 return new Advice(
@@ -473,4 +593,94 @@ public static class UpdateAdvisor
                     Severity.Error);
         }
     }
+
+    // "Open backup folder", when the install saved the files it replaced.
+    private static IReadOnlyList<CardLink>? BackupLinks(InstallResult result) =>
+        result.BackupFolder is { Length: > 0 } folder
+            ? new[] { new CardLink("Open backup folder", LinkAction.OpenFolder, folder) }
+            : null;
+
+    // "ReSkateLauncher.exe", "skate.exe and ReSkateLauncher.exe", "a, b and c".
+    private static string NameList(IReadOnlyList<RunningProcess> processes)
+    {
+        var names = processes.Select(p => p.Name).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        return names.Count == 1 ? names[0] : string.Join(", ", names.Take(names.Count - 1)) + " and " + names[^1];
+    }
+
+    // ---------- Restoring, switching, closing and playing ----------
+
+    /// <summary>The question before putting an earlier backup back.</summary>
+    public static string DescribeRestorePrompt(BackupInfo backup)
+    {
+        string what = backup.Version is { HasTrainer: true } v ? "Trainer " + v.TrainerText : "your previous files";
+        return $"Go back to {what}, saved on {backup.Created:g}?\r\n\r\nYour current files are saved first, so you can come back to them.";
+    }
+
+    /// <summary>The message once an earlier backup has been put back (or couldn't be).</summary>
+    public static Advice DescribeRestoreResult(InstallResult result, BackupInfo backup, IReadOnlyList<RunningProcess>? running = null)
+    {
+        switch (result.Outcome)
+        {
+            case InstallOutcome.Installed:
+                string what = backup.Version is { HasTrainer: true } v ? "Trainer " + v.TrainerText : "your previous files";
+                return new Advice($"Went back to {what}. The files it replaced are saved too, in case you change your mind.", Severity.Good,
+                    Next: FollowUp.Launch, Links: BackupLinks(result));
+
+            case InstallOutcome.AlreadyUpToDate:
+                return new Advice("Your files already match that backup. Nothing needed changing.", Severity.Good);
+
+            default:
+                // Blocked, rolled back or failed: say it the way an install would.
+                return DescribeResult(result, backup.Version ?? new ReSkateVersion(null, null, null, null, null), running);
+        }
+    }
+
+    /// <summary>
+    /// The question before moving a Trainer to a different edition, or null if the two are the same edition (or either is not a Trainer).
+    /// </summary>
+    public static string? DescribeEditionSwitchPrompt(ReSkateVersion? installed, ReSkateVersion incoming)
+    {
+        if (installed is not { HasTrainer: true } || !incoming.HasTrainer) return null;
+        if (string.Equals(installed.Edition ?? "", incoming.Edition ?? "", StringComparison.OrdinalIgnoreCase)) return null;
+
+        return $"This changes your Trainer from the {EditionLabel(installed.Edition)} edition ({installed.TrainerVersion}) " +
+               $"to the {EditionLabel(incoming.Edition)} edition ({incoming.TrainerVersion}).\r\n\r\nContinue?";
+    }
+
+    /// <summary>The question before closing the game for the user.</summary>
+    public static string DescribeCloseGamePrompt(IReadOnlyList<RunningProcess> running) =>
+        $"Close {NameList(running)}?\r\n\r\nAnything you haven't saved in it will be lost. The install carries on once it has closed.";
+
+    /// <summary>When the game was asked to close and didn't.</summary>
+    public static Advice DescribeCloseGameFailed(IReadOnlyList<RunningProcess> stillRunning) =>
+        new($"Couldn't close {NameList(stillRunning)}. Close it yourself, then press the button again. Nothing was changed.",
+            Severity.Warning, Next: FollowUp.CloseGameAndRetry);
+
+    /// <summary>Shown after PLAY is pressed. The tile stays PLAY, in case the launcher is closed and wanted again.</summary>
+    public static Advice DescribeLaunched() =>
+        new($"Started {ReSkateFiles.Launcher}. Have fun!", Severity.Good, Next: FollowUp.Launch);
+
+    /// <summary>When the launcher couldn't be started.</summary>
+    public static Advice DescribeLaunchFailure(LaunchFailure failure, string? detail) => failure switch
+    {
+        LaunchFailure.NotFound => new Advice(
+            $"{ReSkateFiles.Launcher} isn't in that folder, so there's nothing to start. Check the folder.", Severity.Warning),
+        _ => new Advice(
+            $"Windows couldn't start {ReSkateFiles.Launcher}{(string.IsNullOrWhiteSpace(detail) ? "" : ": " + detail)}. Try opening it from the folder yourself.",
+            Severity.Warning),
+    };
+
+    // ---------- Asking for help ----------
+
+    /// <summary>The first line of a copied activity log: which app and which Windows it came from.</summary>
+    public static string DescribeLogHeader(string appVersion, string windows) =>
+        $"ReSkate Trainer Updater v{appVersion} · {windows}";
+
+    /// <summary>The address of a GitHub "new issue" page, with the version already filled in. The log is pasted by the user, not sent.</summary>
+    public static string DescribeProblemReportUrl(string appVersion, string windows) =>
+        OnlineSource.NewIssueUrl(
+            "Problem with the updater",
+            "**What happened?**\n\n\n\n**What did you expect?**\n\n\n\n" +
+            $"**Updater version:** {appVersion}\n**Windows:** {windows}\n\n" +
+            "Please paste the activity log below (open ACTIVITY LOG in the app, then press COPY LOG):\n\n```\n\n```\n");
 }

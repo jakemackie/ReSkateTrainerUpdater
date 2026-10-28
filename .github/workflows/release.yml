@@ -53,7 +53,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $version = "${{ github.ref_name }}".TrimStart('v')
-          $notes = "**To install it, download ReSkateTrainerUpdater-Setup-$version.exe below and run it.** It installs for you only (no administrator needed), adds a Start Menu entry, and keeps itself up to date from then on. Windows may say the publisher is unknown, because the setup isn't code-signed: choose More info, then Run anyway. The .zip is the portable exe with no installer, and it is also what the app downloads to update itself."
+          $notes = "**To install it, download ReSkateTrainerUpdater-Setup-$version.exe below and run it.** It installs for you only (no administrator needed), adds a Start Menu entry, and keeps itself up to date from then on. Windows may show a blue 'Windows protected your PC' screen, because the setup isn't code-signed (that costs money, and this is a free community tool): click **More info**, then **Run anyway**. The .zip is the portable exe with no installer, and it is also what the app downloads to update itself."
           $files = @(Get-ChildItem "release/ReSkateTrainerUpdater-$version.zip") + @(Get-ChildItem "release/ReSkateTrainerUpdater-Setup-$version.exe")
           gh release create "${{ github.ref_name }}" $files --title "ReSkate Trainer Updater ${{ github.ref_name }}" --notes $notes --generate-notes --latest
           if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }
@@ -69,8 +69,15 @@ jobs:
           git fetch origin main:refs/remotes/origin/main
           git checkout origin/main -- latest.json
 
+          # release-note.txt (one short line, in the tagged commit) becomes the "What's new" line the app shows.
+          $noteArgs = @()
+          if (Test-Path release-note.txt) {
+            $note = (Get-Content release-note.txt -Raw).Trim()
+            if ($note) { $noteArgs = @('--notes', $note) }
+          }
+
           $zip = (Get-ChildItem release/ReSkateTrainerUpdater-*.zip).FullName
-          dotnet run --project tools/ReSkateTrainerUpdater.ManifestTool -c Release -- set-app $zip
+          dotnet run --project tools/ReSkateTrainerUpdater.ManifestTool -c Release -- set-app $zip @noteArgs
           if ($LASTEXITCODE -ne 0) { throw "set-app failed" }
           dotnet run --project tools/ReSkateTrainerUpdater.ManifestTool -c Release -- verify
           if ($LASTEXITCODE -ne 0) { throw "verify failed" }

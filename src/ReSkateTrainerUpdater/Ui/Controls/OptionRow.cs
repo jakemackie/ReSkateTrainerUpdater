@@ -25,6 +25,7 @@ internal sealed class OptionRow : BufferedControl
         {
             if (_checked == value) return;
             _checked = value;
+            DescribeState();
             Invalidate();
             CheckedChanged?.Invoke(this, EventArgs.Empty);
         }
@@ -34,8 +35,12 @@ internal sealed class OptionRow : BufferedControl
     public void SetCheckedImmediate(bool value)
     {
         _checked = value;
+        DescribeState();
         Invalidate();
     }
+
+    // A screen reader hears the option and whether it is on, since the tick is only drawn.
+    private void DescribeState() => Describe($"{Title}, {(_checked ? "on" : "off")}", AccessibleRole.CheckButton, Description);
 
     protected override void OnClick(EventArgs e)
     {

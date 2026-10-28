@@ -10,6 +10,10 @@ public sealed class UpdaterSettings
     public string? LastFolder { get; set; }
     public bool BackupReplacedFiles { get; set; } = true;
 
+    /// <summary>Where the window's top-left corner was when it was last closed. Null the first time.</summary>
+    public int? WindowLeft { get; set; }
+    public int? WindowTop { get; set; }
+
     /// <summary>%AppData%\ReSkateTrainerUpdater\settings.json</summary>
     public static string DefaultPath { get; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),

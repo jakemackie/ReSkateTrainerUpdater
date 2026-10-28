@@ -27,7 +27,41 @@ public enum TileAction
 
     /// <summary>Download a newer version of this app, verify it, swap it in and restart.</summary>
     UpdateApp,
+
+    /// <summary>Use the ReSkate folder that was found on this PC as the chosen folder.</summary>
+    UseSuggestedFolder,
+
+    /// <summary>Start the ReSkate launcher in the chosen folder.</summary>
+    Launch,
+
+    /// <summary>Close the programs that are using the ReSkate files (after asking), then install again.</summary>
+    CloseGameAndRetry,
 }
+
+/// <summary>What clicking a small button on the status card does.</summary>
+public enum LinkAction
+{
+    /// <summary>Read latest.json again.</summary>
+    CheckAgain,
+
+    /// <summary>Open a folder in Explorer. The button's target is the folder.</summary>
+    OpenFolder,
+
+    /// <summary>Open a page of this repository in the browser. The button's target is the address.</summary>
+    OpenUrl,
+
+    /// <summary>Put back the files the last install replaced.</summary>
+    RestorePrevious,
+
+    /// <summary>Open a pre-filled "new issue" page in the browser.</summary>
+    ReportProblem,
+}
+
+/// <summary>A small button on the status card.</summary>
+/// <param name="Text">What it says, a few words, for example "Check again".</param>
+/// <param name="Action">What it does.</param>
+/// <param name="Target">The folder or address it opens, when it opens one.</param>
+public sealed record CardLink(string Text, LinkAction Action, string? Target = null);
 
 /// <summary>The look of the big action tile.</summary>
 public enum TileStyle
@@ -73,13 +107,19 @@ public sealed record ActionTile(
 /// <param name="Subline">The smaller line under it.</param>
 /// <param name="Rows">Facts below the divider, each with an icon.</param>
 /// <param name="Tile">The big action tile.</param>
+/// <param name="Links">Small buttons along the bottom of the card. At most <see cref="MaxLinks"/> are shown.</param>
 public sealed record HomeView(
     string Pill,
     Severity Severity,
     string Headline,
     string Subline,
     IReadOnlyList<StatusRow> Rows,
-    ActionTile Tile);
+    ActionTile Tile,
+    IReadOnlyList<CardLink>? Links = null)
+{
+    /// <summary>The card has room for this many small buttons side by side.</summary>
+    public const int MaxLinks = 3;
+}
 
 /// <summary>The small chip in the top-left corner, like the launcher's "Welcome" chip: a dot, a title and a line under it.</summary>
 /// <param name="Title">For example "Connected to GitHub".</param>
@@ -104,4 +144,7 @@ public enum BusyStage
 
     /// <summary>The new version of the app is in place and is about to open.</summary>
     Restarting,
+
+    /// <summary>The game is being closed so the install can go ahead.</summary>
+    Closing,
 }

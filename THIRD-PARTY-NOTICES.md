@@ -335,6 +335,9 @@ grants any rights to it. It is included on the creator's understanding that Elec
 community projects to use it. ReSkate describes itself as a fan project that is not affiliated with or endorsed by
 Electronic Arts or Full Circle, and the same is true of this updater.
 
+The two screenshots of the app in the README (`docs/images/`) show that photo darkened behind the window's cards, and are
+covered by the same words. If asked to remove the photo, replace those screenshots too.
+
 If Electronic Arts or Full Circle ask for it to be removed, delete `Assets/background.jpg` and its line in
 `ReSkateTrainerUpdater.csproj`. The window then falls back to a backdrop painted in code (`Backdrop.cs`).
 

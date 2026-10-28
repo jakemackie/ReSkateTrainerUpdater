@@ -28,7 +28,8 @@ public static class InstallFolderInspector
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { installed = null; }
         }
 
-        return new InstallFolderInfo(folder, true, isEmpty, hasLauncher, hasRuntime, installed, isSteamFolder, hasSpecialCharacters);
+        return new InstallFolderInfo(folder, true, isEmpty, hasLauncher, hasRuntime, installed, isSteamFolder, hasSpecialCharacters,
+            TrainerInstaller.ListBackups(folder).FirstOrDefault());
     }
 
     /// <summary>The launcher refuses to run from Steam's own "skate." game folder.</summary>

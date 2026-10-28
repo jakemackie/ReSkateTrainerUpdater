@@ -18,6 +18,7 @@ AdvisorTests.Run(workspace);
 SettingsTests.Run(workspace);
 OnlineTests.Run(workspace);
 AppUpdateTests.Run(workspace);
+ComfortTests.Run(workspace);
 InstallerScriptTests.Run();
 
 Console.WriteLine();

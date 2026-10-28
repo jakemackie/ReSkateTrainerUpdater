@@ -89,10 +89,13 @@ in order. It stops at the first group that fails.
 ## Installing
 
 `TrainerInstaller.Install(sourceFolder, destinationFolder, backup)` is the only code that writes to the user's
-ReSkate folder.
+ReSkate folder. Two other `TrainerInstaller` methods build on it: `Restore` (which is an `Install` with a backup folder
+as its source, always with its own backup) and `PruneBackups` (which deletes only this installer's own backup folders).
 
 1. **Plan.** It compares every file in the package with the folder, using size and then SHA-256. Each file is
    unchanged, to replace, or to add. If nothing differs, the result is `AlreadyUpToDate` and nothing is written.
+   A file that can't even be read (a program has it locked exclusively) counts as one to replace, so step 2 reports
+   it as in use instead of the install failing with a raw error.
 2. **Check before touching anything.** It creates and deletes a probe file to prove the folder is writable. It
    opens every file it will replace with `FileShare.None`, which fails if the game or launcher has it open. If
    either check fails, the result is `Blocked` and the folder is untouched.
@@ -111,6 +114,37 @@ ReSkate folder.
 | Nothing changes if any file is in use | "Invariant: a file in use blocks the install", "Invariant: nothing is touched if any file is locked" |
 | A failure part-way leaves the folder as it was | "Invariant: a failure part-way is rolled back", "Invariant: the original file is put back after a failure", "Invariant: files added before a failure are removed" |
 | No half-written files are ever left | "Invariant: no half-written files are left behind", "Invariant: no half-written files are left after a rollback" |
+| A locked file that can't be read still blocks cleanly | "Invariant: a same-size file that can't be read blocks the install cleanly instead of throwing" |
+| A restore never damages the backup it restores from | "Invariant: the backup that was restored from is still intact" |
+| Only real backups are ever pruned | "Invariant: a folder that only looks like a backup is never deleted" |
+
+### Backups, restoring and pruning
+
+- A backup folder is named `_ReSkateTrainerUpdater_backup_<yyyy-MM-dd_HH-mm-ss>`. `TrainerInstaller.ListBackups` only
+  counts folders with exactly that name pattern and at least one file in them, newest first, and reads the version of
+  the `ReSkate.dll` inside. `InstallFolderInspector` reports the newest as `InstallFolderInfo.PreviousBackup`.
+- After every successful install that made a backup, `PruneBackups` keeps the newest `BackupsToKeep` (3) and deletes the
+  rest. Folders that don't match the pattern, or are empty, are never touched.
+- **Restore** is `Install(backupFolder → gameFolder, backup: true)`. It has every guarantee of an install: it checks for
+  locked files first, saves what it replaces (so the restore can be undone), and rolls back on failure. A backup named by
+  the same second as an existing one moves on a second, so a restore straight after an install never writes into the
+  backup it is reading from.
+- The card shows **Restore &lt;version&gt;** only when the newest backup is a different release from what is installed.
+
+### When the game is in the way
+
+If an install or restore comes back `Blocked` by `FilesInUse`, the form asks `GameProcesses.FindUsing(folder)` which
+programs run from the folder or have one of its files loaded (it matches short `JAKEMA~1` and long paths alike, and never
+includes the updater itself). `UpdateAdvisor.DescribeResult` names them and sets the follow-up `CloseGameAndRetry`, which
+`WithResult` turns into a **CLOSE GAME** tile. Clicking it looks again (the user may have closed the game), asks, and only on
+yes calls `GameProcesses.Close`: a polite close, then after a few seconds an end. It then runs whatever was blocked again
+(an install or a restore) without repeating questions the user already answered. Nothing is ever closed without a yes.
+
+### After an install
+
+`DescribeResult` returns a `FollowUp.Launch` for a finished install, and `WithResult` turns it into a **PLAY** tile if the
+folder has `ReSkateLauncher.exe`. PLAY runs `GameLauncher.Start`, which asks the shell to start the launcher as
+double-clicking would. The same advice carries an **Open backup folder** button when a backup was made.
 
 ## Online updates
 
@@ -120,12 +154,18 @@ start-up ──► FetchManifestAsync ──► TrainerManifest.Parse ──► 
                  6 s timeout, 64 KB limit, never throws
 
 folder inspected or manifest arrives ──► UpdateAdvisor.DescribeOnlineOffer(manifest, folder)
-                                              ──► OnlineOffer: None | FreshInstall | Update | UpToDate
+                                              ──► OnlineOffer: None | FreshInstall | AddTrainer | Update | SwitchEdition | UpToDate
                                               ──► UpdateAdvisor.DescribeHome(...) turns that into the screen:
-                                                  FreshInstall -> blue INSTALL tile, Update -> blue UPDATE tile,
+                                                  FreshInstall -> blue INSTALL tile, AddTrainer -> blue ADD TRAINER tile,
+                                                  Update -> blue UPDATE tile, SwitchEdition -> blue SWITCH tile (asks first),
                                                   UpToDate -> dark green UP TO DATE tile, None -> dark tile and a reason
 
-big tile clicked (INSTALL or UPDATE) ──► TrainerDownloader.DownloadAsync(entry)
+user presses Check again, or clicks the GitHub chip ──► the same FetchManifestAsync, never on a timer
+
+first run, no folder remembered ──► ReSkateLocator.Find(DefaultRoots())  (local folder and file names only)
+                                         ──► a FOUND screen with a USE IT tile
+
+big tile clicked (INSTALL, UPDATE, ADD TRAINER or SWITCH) ──► TrainerDownloader.DownloadAsync(entry)
                               1. IsTrustedDownloadUrl(entry.Url), or refuse without a request
                               2. GET, following GitHub's redirect to its download host (https only)
                               3. Content-Length, if sent, must equal sizeBytes
@@ -217,6 +257,20 @@ implements `IBackdropHost`. Each card's
 alpha, so the backdrop shows through. This only works because the cards are direct children of the form. The photo is
 game artwork that belongs to Electronic Arts and Full Circle, credited in `THIRD-PARTY-NOTICES.md`. If it is removed or
 can't be read, `Backdrop` paints a dusk landscape in code instead.
+
+**The card's small buttons.** Under the status card's text is a row of up to three small buttons (**Check again**,
+**Release notes**, **Restore ...**, **Open backup folder**, **Report a problem**). They are ordinary `SquareButton`s laid
+over the card by `LayoutLinkButtons`, not drawn by the card, so each is a real focusable control with its own name. The card
+only reserves room for them (`StatusCard.LinkRowHeight`). `HomeView.Links` says which, and what each does (`LinkAction`);
+the form handles the click, and only opens a web page if `OnlineSource.IsTrustedPageUrl` allows it.
+
+**Screen readers.** Every custom control gives itself a name and role through `BufferedControl.Describe`: the tiles and
+buttons are push buttons, the backup option is a check box that says whether it is on, and the status card is text. A
+control with a push-button role can also be pressed by assistive technology, which clicks it like the mouse does. The
+two corner buttons are mouse only; Alt+F4 and Windows' own window menu still close and minimise the window.
+
+**The window remembers where it was** (`UpdaterSettings.WindowLeft` and `WindowTop`), if that is still on a screen. Its size
+stays fixed, so the layout keeps its proportions.
 
 **Instant clicks.** `BufferedControl` turns off `ControlStyles.StandardDoubleClick`. Otherwise Windows delivers the
 second of two quick clicks as a double-click, which no control handles, and every other click of a fast series would be

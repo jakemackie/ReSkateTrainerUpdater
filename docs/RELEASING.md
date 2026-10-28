@@ -34,6 +34,8 @@ release notes. Building the setup needs Inno Setup 6, which GitHub's Windows run
 ## Releasing a new version of the app
 
 1. Set `<Version>` in `Directory.Build.props`, for example `1.1.0`. This is the only place the version lives.
+   Also put one short line (at most 90 characters) in `release-note.txt` at the repository root. The app shows it as
+   "What's new" next to the **UPDATE APP** tile. If the file is missing or empty, no line is shown.
 2. Commit and push to `main`. Wait for the **CI** workflow to pass.
 3. Tag the same commit and push the tag:
 
@@ -109,6 +111,9 @@ dotnet run --project tools/ReSkateTrainerUpdater.ManifestTool -- add C:\path\to\
 The tool unpacks the zip, reads the version, edition and build from the DLL itself, computes the size and SHA-256,
 and writes the entry into `latest.json`. Other editions are kept. It prints the exact tag to use, by default
 `trainer-<edition>-<version>`. Don't commit yet.
+
+It also records today's date as `published` (override with `--published 2026-10-25`), which the app shows as
+"Published 3 days ago". To add a "What's new" line, add `--notes "One short line, up to 90 characters"`.
 
 ### 4. Create the GitHub Release
 

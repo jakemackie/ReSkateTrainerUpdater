@@ -9,6 +9,7 @@ namespace ReSkateTrainerUpdater.Core;
 /// <param name="Installed">The version of the installed ReSkate.dll, if it could be read.</param>
 /// <param name="IsSteamSkateFolder">The folder is Steam's own "skate." game folder, which ReSkate can't run from.</param>
 /// <param name="HasSpecialCharacters">The path has non-ASCII characters, which the launcher may not cope with.</param>
+/// <param name="PreviousBackup">The newest backup an earlier install left in the folder, if any. It is what "restore" goes back to.</param>
 public sealed record InstallFolderInfo(
     string Folder,
     bool Exists,
@@ -17,4 +18,5 @@ public sealed record InstallFolderInfo(
     bool HasRuntime,
     ReSkateVersion? Installed,
     bool IsSteamSkateFolder,
-    bool HasSpecialCharacters);
+    bool HasSpecialCharacters,
+    BackupInfo? PreviousBackup = null);

@@ -21,6 +21,12 @@ public interface IPublishedFile
 
     /// <summary>True if <see cref="Url"/> is one the app is allowed to download from. Checked again before every request.</summary>
     bool HasTrustedUrl { get; }
+
+    /// <summary>The day it was published, as yyyy-MM-dd. Optional.</summary>
+    string? Published { get; }
+
+    /// <summary>One short line about what is new. Optional.</summary>
+    string? Notes { get; }
 }
 
 /// <summary>The newest published version of this app itself, as listed in latest.json.</summary>
@@ -28,7 +34,9 @@ public interface IPublishedFile
 /// <param name="Url">Always <see cref="OnlineSource.AppAssetUrl"/> for this version.</param>
 /// <param name="SizeBytes">The exact size of the zip in bytes.</param>
 /// <param name="Sha256">The SHA-256 of the zip, 64 lower-case hex characters.</param>
-public sealed record AppEntry(string Version, string Url, long SizeBytes, string Sha256) : IPublishedFile
+/// <param name="Published">The day it was published, as yyyy-MM-dd. Optional.</param>
+/// <param name="Notes">One short line about what is new. Optional.</param>
+public sealed record AppEntry(string Version, string Url, long SizeBytes, string Sha256, string? Published = null, string? Notes = null) : IPublishedFile
 {
     public string FileName => Uri.UnescapeDataString(Url[(Url.LastIndexOf('/') + 1)..]);
     public bool HasTrustedUrl => OnlineSource.IsTrustedAppUrl(Url, Version);
@@ -42,6 +50,8 @@ public sealed record AppEntry(string Version, string Url, long SizeBytes, string
 /// <param name="Url">The Release asset download URL. Always passes <see cref="OnlineSource.IsTrustedDownloadUrl"/>.</param>
 /// <param name="SizeBytes">The exact size of the zip in bytes.</param>
 /// <param name="Sha256">The SHA-256 of the zip, 64 lower-case hex characters.</param>
+/// <param name="Published">The day it was published, as yyyy-MM-dd. Optional.</param>
+/// <param name="Notes">One short line about what is new. Optional.</param>
 public sealed record ManifestEntry(
     string Edition,
     string Version,
@@ -49,7 +59,9 @@ public sealed record ManifestEntry(
     string? ReSkateVersion,
     string Url,
     long SizeBytes,
-    string Sha256) : IPublishedFile
+    string Sha256,
+    string? Published = null,
+    string? Notes = null) : IPublishedFile
 {
     public bool HasTrustedUrl => OnlineSource.IsTrustedDownloadUrl(Url);
 
@@ -81,10 +93,14 @@ public sealed class TrainerManifest
     /// <summary>The largest manifest the app will read.</summary>
     public const int MaxManifestBytes = 64 * 1024;
 
+    /// <summary>The longest "notes" line, so it fits on the status card.</summary>
+    public const int MaxNotesLength = 90;
+
     private static readonly Regex VersionPattern = new(@"^\d{1,4}\.\d{1,4}\.\d{1,4}$", RegexOptions.CultureInvariant);
     private static readonly Regex BuildPattern = new(@"^[0-9a-f]{5,40}$", RegexOptions.CultureInvariant);
     private static readonly Regex Sha256Pattern = new(@"^[0-9a-f]{64}$", RegexOptions.CultureInvariant);
     private static readonly Regex EditionPattern = new(@"^[a-z0-9]+(-[a-z0-9]+)*$", RegexOptions.CultureInvariant);
+    private static readonly Regex PublishedPattern = new(@"^\d{4}-\d{2}-\d{2}$", RegexOptions.CultureInvariant);
 
     private readonly SortedDictionary<string, ManifestEntry> _editions = new(StringComparer.Ordinal);
 
@@ -210,7 +226,8 @@ public sealed class TrainerManifest
             value.TryGetProperty(name, out var p) && p.ValueKind == JsonValueKind.String ? p.GetString() : null;
         long size = value.TryGetProperty("sizeBytes", out var s) && s.ValueKind == JsonValueKind.Number && s.TryGetInt64(out long n) ? n : -1;
 
-        var app = new AppEntry(Text("version") ?? "", Text("url") ?? "", size, (Text("sha256") ?? "").ToLowerInvariant());
+        var app = new AppEntry(Text("version") ?? "", Text("url") ?? "", size, (Text("sha256") ?? "").ToLowerInvariant(),
+            Text("published"), Text("notes"));
         var appProblems = CheckApp(app);
         if (appProblems.Count == 0) return app;
 
@@ -233,7 +250,20 @@ public sealed class TrainerManifest
             problems.Add($"\"sizeBytes\" must be a positive whole number no larger than {MaxZipBytes} (it is {app.SizeBytes}).");
         if (!Sha256Pattern.IsMatch(app.Sha256))
             problems.Add("\"sha256\" must be exactly 64 lower-case hex characters.");
+        CheckDescription(app.Published, app.Notes, problems);
         return problems;
+    }
+
+    // The two optional lines people read: when it was published and what is new in it.
+    private static void CheckDescription(string? published, string? notes, List<string> problems)
+    {
+        if (published is not null &&
+            !(PublishedPattern.IsMatch(published) && DateOnly.TryParseExact(published, "yyyy-MM-dd", out _)))
+        {
+            problems.Add($"\"published\" must be a date like 2026-10-28 (it is \"{published}\").");
+        }
+        if (notes is not null && (notes.Length == 0 || notes.Length > MaxNotesLength || notes.Any(char.IsControl)))
+            problems.Add($"\"notes\" must be one line of 1 to {MaxNotesLength} characters.");
     }
 
     private static ManifestEntry? ReadEntry(JsonProperty property, List<string> problems)
@@ -259,7 +289,9 @@ public sealed class TrainerManifest
             ReSkateVersion: Text("reskateVersion"),
             Url: Text("url") ?? "",
             SizeBytes: size,
-            Sha256: (Text("sha256") ?? "").ToLowerInvariant());
+            Sha256: (Text("sha256") ?? "").ToLowerInvariant(),
+            Published: Text("published"),
+            Notes: Text("notes"));
     }
 
     /// <summary>Every reason an entry can't be trusted. Empty means it is fine.</summary>
@@ -281,6 +313,7 @@ public sealed class TrainerManifest
             problems.Add($"\"sizeBytes\" must be a positive whole number no larger than {MaxZipBytes} (it is {entry.SizeBytes}).");
         if (!Sha256Pattern.IsMatch(entry.Sha256))
             problems.Add("\"sha256\" must be exactly 64 lower-case hex characters.");
+        CheckDescription(entry.Published, entry.Notes, problems);
 
         return problems;
     }
@@ -305,6 +338,8 @@ public sealed class TrainerManifest
                 writer.WriteString("url", app.Url);
                 writer.WriteNumber("sizeBytes", app.SizeBytes);
                 writer.WriteString("sha256", app.Sha256);
+                if (app.Published is not null) writer.WriteString("published", app.Published);
+                if (app.Notes is not null) writer.WriteString("notes", app.Notes);
                 writer.WriteEndObject();
             }
             writer.WriteStartObject("editions");
@@ -317,6 +352,8 @@ public sealed class TrainerManifest
                 writer.WriteString("url", entry.Url);
                 writer.WriteNumber("sizeBytes", entry.SizeBytes);
                 writer.WriteString("sha256", entry.Sha256);
+                if (entry.Published is not null) writer.WriteString("published", entry.Published);
+                if (entry.Notes is not null) writer.WriteString("notes", entry.Notes);
                 writer.WriteEndObject();
             }
             writer.WriteEndObject();

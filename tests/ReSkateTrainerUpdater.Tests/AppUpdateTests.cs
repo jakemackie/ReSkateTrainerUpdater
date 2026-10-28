@@ -239,7 +239,9 @@ internal static class AppUpdateTests
         views.Add(noFolder);
         Check("A new app version shows a blue UPDATE APP tile, even before a folder is chosen",
             noFolder is { Pill: "APP UPDATE", Severity: Severity.Highlight, Tile: { Title: "UPDATE APP", Action: TileAction.UpdateApp, Style: TileStyle.Primary, Enabled: true } }, noFolder.Pill);
-        Check("It says from and to", noFolder.Tile.Subtitle == "1.1.3 → 1.2.0" && noFolder.Subline.Contains("1.1.3 → 1.2.0") && noFolder.Subline.Contains("restarts itself"), noFolder.Subline);
+        Check("It says from and to", noFolder.Tile.Subtitle.StartsWith("1.1.3 → 1.2.0") && noFolder.Subline.Contains("1.1.3 → 1.2.0") && noFolder.Subline.Contains("restarts itself"), noFolder.Subline);
+        Check("It says how big the download is on the tile and in the text",
+            noFolder.Tile.Subtitle == "1.1.3 → 1.2.0 · 4.9 KB" && noFolder.Subline.Contains("4.9 KB download"), noFolder.Tile.Subtitle + " / " + noFolder.Subline);
         Check("It lists the new version and its size", noFolder.Rows.Any(r => r.Text == "New updater: 1.2.0 · 4.9 KB"), string.Join(" | ", noFolder.Rows.Select(r => r.Text)));
 
         // The app comes before a Trainer update.

@@ -29,6 +29,7 @@ internal sealed class ActionTileControl : BufferedControl
     public void Show(ActionTile tile)
     {
         _tile = tile;
+        Describe($"{tile.Title}. {tile.Subtitle}", tile.Enabled ? AccessibleRole.PushButton : AccessibleRole.StaticText);
         Enabled = tile.Enabled;
         TabStop = tile.Enabled;
         Cursor = tile.Enabled ? Cursors.Hand : Cursors.Default;

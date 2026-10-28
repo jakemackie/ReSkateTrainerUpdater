@@ -110,8 +110,11 @@ weakens the download checks, or breaks the release process.
 
 ### The ReSkate folder
 
-12. **Only `TrainerInstaller.Install` writes to the user's ReSkate folder.** Nothing else may create, change or
-   delete files there.
+12. **Only `TrainerInstaller` writes to the user's ReSkate folder**, through `Install`, `Restore` (an `Install` whose
+   source is a backup folder) and `PruneBackups` (which deletes only folders named exactly like this installer's own
+   non-empty backups, and keeps the newest three). Nothing else may create, change or delete files there.
+   `GameProcesses.Close` ends a running program, not a file, and only after the user said yes (rule 17).
+   `ReSkateLocator` only reads folder and file names.
 13. **Keep the install guarantees** (see `docs/ARCHITECTURE.md`): check write access and locked files before
    changing anything, write each file as `<name>.updating` and then move it into place, save every replaced file
    first, and put everything back if any step fails. Any change to `TrainerInstaller` must keep every
@@ -120,23 +123,31 @@ weakens the download checks, or breaks the release process.
 ### Online updates
 
 14. **`OnlineSource` is the only place that names a URL, owner, repository or branch.** Do not write
-   `github.com` or `raw.githubusercontent.com` anywhere else in `src/`.
+   `github.com` or `raw.githubusercontent.com` anywhere else in `src/`. That includes the release page a "Release notes"
+   button opens and the "new issue" address behind "Report a problem".
 15. **Never weaken `OnlineSource.IsTrustedDownloadUrl`.** It only accepts
    `https://github.com/jakemackie/ReSkateTrainerUpdater/releases/download/<tag>/<file>.zip`.
    `TrainerDownloader.DownloadAsync` checks it again before every request. Do not add other hosts, mirrors,
    http, or a setting that overrides it.
+   The window only opens a web page (`UpdaterForm.OpenWithWindows`) if `OnlineSource.IsTrustedPageUrl` allows it: https,
+   github.com, this repository only. Never loosen it, and never open an address the user or a file supplied.
 16. **A downloaded zip reaches `TrainerInstaller` only after all three checks pass**: the exact size from
    `latest.json`, the exact SHA-256 from `latest.json`, and `TrainerDownloader.CheckPackageMatches`, which
    confirms the version, edition and build inside the DLL. On any failure the download is deleted and the folder
    is not touched.
-17. **Never install without a click.** The app may tell the user an update exists. It must never download or
-   install a Trainer, or a new version of itself, on its own.
+17. **Never install, or close a program, without a click.** The app may tell the user an update exists. It must never
+   download or install a Trainer, or a new version of itself, on its own. It may name the programs that are in the way,
+   but it ends one only after the user pressed CLOSE GAME and answered yes. Switching a Trainer to another edition asks
+   first too (`DescribeEditionSwitchPrompt`).
 18. **Network failures are silent.** If `latest.json` can't be fetched or read, the status card says it couldn't
     check (a calm grey "OFFLINE" pill) and one line goes to the activity log. No dialogs and no error colours.
     Dropping a zip must keep working with no internet.
-19. **No telemetry.** The app sends two kinds of request only: a GET for `latest.json` on start-up, and a GET
-    for one zip (a Trainer, or a new version of the app) when the user clicks the big tile. The only header added is the User-Agent
-    `ReSkateTrainerUpdater/<version>`. Don't add analytics, IDs, crash reporting, or anything else.
+19. **No telemetry.** The app sends two kinds of request only: a GET for `latest.json` (on start-up, and again only when
+    the user presses Check again or clicks the GitHub chip, never on a timer), and a GET for one zip (a Trainer, or a new
+    version of the app) when the user clicks the big tile. The only header added is the User-Agent
+    `ReSkateTrainerUpdater/<version>`. Don't add analytics, IDs, crash reporting, or anything else. "Release notes" and
+    "Report a problem" hand an address to the user's browser: the app makes no request for them and never puts a log,
+    path or any user data in the address (`DescribeProblemReportUrl` holds only the app and Windows versions).
 
 ### The installer
 
@@ -217,7 +228,11 @@ A self-update installs code, so it is held to a stricter standard than a Trainer
 | `src/ReSkateTrainerUpdater.Core/TrainerPackageLoader.cs` | Unpacking a zip (nested zips, wrapper folders) and validating it |
 | `src/ReSkateTrainerUpdater.Core/ReSkateScanner.cs` | Reading versions from `ReSkate.dll` / `ReSkateLauncher.exe` |
 | `src/ReSkateTrainerUpdater.Core/InstallFolderInspector.cs` | What is installed in a folder |
-| `src/ReSkateTrainerUpdater.Core/TrainerInstaller.cs` | The only code that writes to the ReSkate folder |
+| `src/ReSkateTrainerUpdater.Core/TrainerInstaller.cs` | The only code that writes to the ReSkate folder: `Install`, `Restore`, `PruneBackups`, `ListBackups` |
+| `src/ReSkateTrainerUpdater.Core/GameProcesses.cs` | Which programs are using the game's files, and closing them (after a yes) |
+| `src/ReSkateTrainerUpdater.Core/GameLauncher.cs` | The PLAY tile: starting `ReSkateLauncher.exe` |
+| `src/ReSkateTrainerUpdater.Core/ReSkateLocator.cs` | First-run search of the usual places for a ReSkate folder (names only) |
+| `src/ReSkateTrainerUpdater.Core/ReleaseDate.cs` | "3 days ago" from a published date |
 | `src/ReSkateTrainerUpdater.Core/UpdateAdvisor.cs` | Every message, the online offer, and `DescribeHome` / `DescribeBusy` / `WithResult`, which decide the whole screen |
 | `src/ReSkateTrainerUpdater.Core/HomeView.cs` | `HomeView`, `ActionTile`, `StatusRow`, `TileAction`, `TileStyle`, `OnlineStatus`, `BusyStage` |
 | `src/ReSkateTrainerUpdater.Core/Advice.cs` | `Advice`, `Severity`, `UpdateContext`, `OnlineOffer`, `OfferKind` |
@@ -233,7 +248,7 @@ A self-update installs code, so it is held to a stricter standard than a Trainer
 | `src/ReSkateTrainerUpdater/Ui/GameFonts.cs`, `TextPaint.cs` | Loading the embedded fonts, and drawing text with them |
 | `src/ReSkateTrainerUpdater/Assets/Fonts/` | Permanent Marker and Montserrat, the same fonts the launcher uses |
 | `THIRD-PARTY-NOTICES.md` | Font licences. Ships in the release zip. |
-| `tests/ReSkateTrainerUpdater.Tests/` | The console test runner. `OnlineTests.cs` covers everything online, `AppUpdateTests.cs` the self-update. |
+| `tests/ReSkateTrainerUpdater.Tests/` | The console test runner. `OnlineTests.cs` covers everything online, `AppUpdateTests.cs` the self-update, `ComfortTests.cs` backups and restore, finding the folder, the game in the way, PLAY, release details and links. |
 | `tools/ReSkateTrainerUpdater.ManifestTool/` | Maintainer tool: `add`, `check`, `verify` for `latest.json` |
 | `latest.json` | The published manifest, read by every installed copy of the app |
 | `docs/ARCHITECTURE.md` | How install, rollback, version reading and online updates work, and why |
@@ -255,13 +270,28 @@ A self-update installs code, so it is held to a stricter standard than a Trainer
 
 ## Things that look wrong but are deliberate
 
-- **The big tile is never offered for the standard edition or for plain ReSkate.** At first only Tournament is
-  published. An installed edition is only offered a newer version of that same edition, never a switch. The tile
-  is greyed out and the status card says why.
+- **A Trainer is only ever *updated* within its own edition.** At first only Tournament is published. Plain ReSkate is
+  offered **ADD TRAINER**, and an edition latest.json doesn't list (such as the standard one) is offered **SWITCH** to
+  Tournament, as a deliberate choice with a confirmation, never as an update and never on its own. An unreadable
+  `ReSkate.dll` is offered nothing, and the status card says why.
 - **The big tile is never hidden.** When there is nothing to do it goes dark and says "UP TO DATE" (green) or
-  "NO UPDATE". Users read a disappearing button as a bug, so don't remove it.
+  "NO UPDATE". Users read a disappearing button as a bug, so don't remove it. After an install it becomes **PLAY**, or
+  **CLOSE GAME** if the game blocked it, until the user changes something.
 - **There is no maximise button and the window can't be resized.** The launcher's window has the same two corner
-  buttons. The layout is fixed, so a maximised window would just be a small app in a big black rectangle.
+  buttons. The layout is fixed, so a maximised window would just be a small app in a big black rectangle. A smaller
+  default size was considered and left alone, because rule 5's measurements are for 1440 by 840. The window does remember
+  where it was (`WindowLeft`, `WindowTop`).
+- **The small buttons on the status card are separate controls, not drawn by the card.** `UpdaterForm.LayoutLinkButtons`
+  places them over the card, and `StatusCard` only reserves the room. That makes each a real focusable control with an
+  accessible name (rule 4 still holds: they derive from `BufferedControl`).
+- **Backups are capped at the newest three** (`TrainerInstaller.BackupsToKeep`), pruned after a successful install.
+  Restoring goes back to the newest one and always makes a backup of what it replaces, even if the backup switch is off.
+- **The first-run folder search can suggest an unpacked Trainer zip in Downloads.** Folders on drive roots and Documents are
+  searched before Downloads, and the user has to click USE IT, so a wrong guess costs nothing.
+- **`release-note.txt` is one line the Release workflow records as the app's "What's new".** Keep it to 90 characters or
+  `set-app` refuses it.
+- **UI Automation sees names, not button roles, for the custom controls.** MSAA (what most screen readers use) gets the
+  right role and a "Press" action. Setting the control's text as well is what gives UI Automation the name.
 - **There are two cards at the top left.** The first is the creator credit ("Made by os_uk", with their profile
   picture), the second is GitHub's status. The status card is the equivalent of the launcher's "Welcome" card: green dot
   when `latest.json` was read, blue while checking, grey when it couldn't be reached. The credit text comes from

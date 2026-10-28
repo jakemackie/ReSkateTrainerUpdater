@@ -23,6 +23,8 @@ internal sealed class WindowButtons : BufferedControl
     {
         Size = new Size(ButtonWidth * 2, ButtonHeight);
         Cursor = Cursors.Default;
+        // The two corner buttons are one drawn control and are mouse only. Windows' own Alt+Space menu and Alt+F4 still minimise and close.
+        Describe("Window buttons: minimise and close. Alt+F4 also closes the app.", AccessibleRole.Grouping);
     }
 
     private int ButtonAt(Point p) => p.X < 0 || p.X >= Width || p.Y < 0 || p.Y >= Height ? -1 : p.X < Width / 2 ? 0 : 1;

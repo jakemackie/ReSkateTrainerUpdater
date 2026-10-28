@@ -8,12 +8,14 @@ using ReSkateTrainerUpdater.Core;
 const string Usage = """
     ReSkate Trainer Updater manifest tool
 
-      add <zip> [--tag <tag>] [--manifest <path>]
+      add <zip> [--tag <tag>] [--notes <text>] [--published <yyyy-MM-dd>] [--manifest <path>]
           Reads the Trainer version, edition and build from the zip itself, hashes it, and writes its entry into
           latest.json. The tag defaults to trainer-<edition>-<version>, for example trainer-tournament-0.9.2.
           Upload the zip to a GitHub Release with exactly that tag BEFORE pushing latest.json.
+          --notes is one short line the app shows as "What's new" (at most 90 characters). --published defaults to
+          today (UTC) and is shown as "Published 3 days ago".
 
-      set-app <zip> [--manifest <path>]
+      set-app <zip> [--notes <text>] [--published <yyyy-MM-dd>] [--manifest <path>]
           Records a new version of the updater app itself in latest.json, so installed copies can update themselves.
           The zip must be named ReSkateTrainerUpdater-<version>.zip and hold ReSkateTrainerUpdater.exe. It is checked
           the same way the app will check it. The Release workflow runs this for you after publishing an app release.
@@ -42,6 +44,8 @@ string command = args[0];
 string? zipArgument = null;
 string? tag = null;
 string? manifestPath = null;
+string? notes = null;
+string published = DateTime.UtcNow.ToString("yyyy-MM-dd");
 
 for (int i = 1; i < args.Length; i++)
 {
@@ -49,6 +53,8 @@ for (int i = 1; i < args.Length; i++)
     {
         case "--tag" when i + 1 < args.Length: tag = args[++i]; break;
         case "--manifest" when i + 1 < args.Length: manifestPath = args[++i]; break;
+        case "--notes" when i + 1 < args.Length: notes = args[++i].Trim(); break;
+        case "--published" when i + 1 < args.Length: published = args[++i]; break;
         default:
             if (args[i].StartsWith("--", StringComparison.Ordinal) || zipArgument is not null)
                 return UsageError($"Unexpected argument: {args[i]}");
@@ -61,9 +67,9 @@ manifestPath = Path.GetFullPath(manifestPath ?? Path.Combine(FindRepoRoot() ?? D
 
 return command switch
 {
-    "add" when zipArgument is not null => Add(zipArgument, tag, manifestPath),
+    "add" when zipArgument is not null => Add(zipArgument, tag, manifestPath, notes, published),
     "add" => UsageError("add needs the path of a Trainer zip."),
-    "set-app" when zipArgument is not null => SetApp(zipArgument, manifestPath),
+    "set-app" when zipArgument is not null => SetApp(zipArgument, manifestPath, notes, published),
     "set-app" => UsageError("set-app needs the path of the app release zip."),
     "remove" when zipArgument is not null => Remove(zipArgument, manifestPath),
     "remove" => UsageError("remove needs an edition key, for example tournament."),
@@ -74,7 +80,7 @@ return command switch
 
 // ---------- add ----------
 
-static int Add(string zipPath, string? tag, string manifestPath)
+static int Add(string zipPath, string? tag, string manifestPath, string? notes, string published)
 {
     if (!OperatingSystem.IsWindows())
         return Error("add must run on Windows: the product name in ReSkate.dll is read from Windows file properties.");
@@ -125,7 +131,9 @@ static int Add(string zipPath, string? tag, string manifestPath)
             ReSkateVersion: version.BaseVersion is { } b && Regex.IsMatch(b, @"^\d{1,4}\.\d{1,4}\.\d{1,4}$") ? b : null,
             Url: OnlineSource.ReleaseAssetUrl(tag, fileName),
             SizeBytes: size,
-            Sha256: sha256);
+            Sha256: sha256,
+            Published: published,
+            Notes: string.IsNullOrEmpty(notes) ? null : notes);
 
         var problems = TrainerManifest.CheckEntry(entry);
         if (problems.Count > 0) return Error(string.Join(Environment.NewLine, problems));
@@ -156,6 +164,7 @@ static int Add(string zipPath, string? tag, string manifestPath)
         Console.WriteLine($"  size     {size} bytes");
         Console.WriteLine($"  sha256   {sha256}");
         Console.WriteLine($"  url      {entry.Url}");
+        Console.WriteLine($"  shown    published {entry.Published}{(entry.Notes is null ? "" : ", \"" + entry.Notes + "\"")}");
         Console.WriteLine();
         Console.WriteLine("Next steps, in this order:");
         Console.WriteLine($"  1. Create a GitHub Release with tag \"{tag}\" and attach {fileName} unchanged.");
@@ -168,7 +177,7 @@ static int Add(string zipPath, string? tag, string manifestPath)
 
 // ---------- set-app ----------
 
-static int SetApp(string zipPath, string manifestPath)
+static int SetApp(string zipPath, string manifestPath, string? notes, string published)
 {
     if (!OperatingSystem.IsWindows())
         return Error("set-app must run on Windows: the exe's version is read from Windows file properties.");
@@ -197,7 +206,7 @@ static int SetApp(string zipPath, string manifestPath)
     string sha256;
     using (var stream = File.OpenRead(zipPath)) sha256 = Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
 
-    var entry = new AppEntry(version, OnlineSource.AppAssetUrl(version), size, sha256);
+    var entry = new AppEntry(version, OnlineSource.AppAssetUrl(version), size, sha256, published, string.IsNullOrEmpty(notes) ? null : notes);
     var problems = TrainerManifest.CheckApp(entry);
     if (problems.Count > 0) return Error(string.Join(Environment.NewLine, problems));
 
@@ -223,6 +232,7 @@ static int SetApp(string zipPath, string manifestPath)
     Console.WriteLine($"  size     {size} bytes");
     Console.WriteLine($"  sha256   {sha256}");
     Console.WriteLine($"  url      {entry.Url}");
+    Console.WriteLine($"  shown    published {entry.Published}{(entry.Notes is null ? "" : ", \"" + entry.Notes + "\"")}");
     return 0;
 }
 

@@ -70,6 +70,20 @@ internal static class InstallerTests
         Check("The blocked file is named", locked.Problems.Any(p => p.Contains("ReSkate.dll")), string.Join("; ", locked.Problems));
         Check("Invariant: nothing is touched if any file is locked", Hashing.Of(launcher) == launcherBefore && File.ReadAllBytes(dll).SequenceEqual(edited));
 
+        // The same size as the new file, and locked so even reading it fails (as with some programs that hold a file exclusively).
+        var sameSize = workspace.NewFolder("same_size_locked");
+        FakeBinary.WriteRelease(sameSize, trainerVersion: "0.9.1+aaaaaaa");
+        var sameSizeDll = Path.Combine(sameSize, "ReSkate.dll");
+        Check("The test file really is the same size as the package's", new FileInfo(sameSizeDll).Length == new FileInfo(releaseDll).Length);
+        InstallResult lockedSameSize;
+        using (new FileStream(sameSizeDll, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            lockedSameSize = TrainerInstaller.Install(release, sameSize, backup: true);
+        }
+        Check("Invariant: a same-size file that can't be read blocks the install cleanly instead of throwing",
+            lockedSameSize is { Outcome: InstallOutcome.Blocked, BlockedBy: BlockReason.FilesInUse }, lockedSameSize.Outcome.ToString());
+        Check("Invariant: nothing is changed when that happens", Hashing.Of(sameSizeDll) != Hashing.Of(releaseDll));
+
         var broken = workspace.NewFolder("broken");
         File.WriteAllBytes(Path.Combine(broken, "ReSkate.dll"), edited);
         // A folder where the launcher should go: copying the launcher fails part-way through.

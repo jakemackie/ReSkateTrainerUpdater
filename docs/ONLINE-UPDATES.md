@@ -29,14 +29,16 @@ GitHub redirects renamed repositories for a while, but don't rely on it.
       "reskateVersion": "2.1.1",
       "url": "https://github.com/jakemackie/ReSkateTrainerUpdater/releases/download/trainer-tournament-0.9.2/ReSkate_Trainer_Tournament-0.9.2-on-v2.1.1.zip",
       "sizeBytes": 17319112,
-      "sha256": "737af3e3bdd83687c4bb32242794655aa46dac5f7574f0f7eeeacfbe4cc75619"
+      "sha256": "737af3e3bdd83687c4bb32242794655aa46dac5f7574f0f7eeeacfbe4cc75619",
+      "published": "2026-10-25",
+      "notes": "Smoother physics"
     }
   }
 }
 ```
 
-These are the real values for the 0.9.2 Tournament zip, as the manifest tool wrote them. The committed file
-starts with `"editions": {}`, which means nothing is published and the tile stays dark.
+These are the real values for the 0.9.2 Tournament zip, as the manifest tool wrote them (the last two lines are
+optional, and are the tool's `--published` and `--notes`). If an edition isn't listed, the tile stays dark for it.
 
 | Field | Required | Rule |
 | --- | --- | --- |
@@ -48,6 +50,11 @@ starts with `"editions": {}`, which means nothing is published and the tile stay
 | `url` | yes | Must pass the accepted-URL rule above. The file name may use only letters, digits, `.`, `-` and `_`. |
 | `sizeBytes` | yes | The exact size of the zip, from 1 byte to 500 MB. |
 | `sha256` | yes | The SHA-256 of the zip, 64 hex characters. |
+| `published` | no | The day it was published, as `yyyy-MM-dd`. The card shows it as "Published 3 days ago". |
+| `notes` | no | One short line of 1 to 90 characters, no line breaks. The card shows it as "What's new: ...". |
+
+The "Release notes" button on the card needs no field of its own: it opens the release page of the tag in `url`
+(`https://github.com/jakemackie/ReSkateTrainerUpdater/releases/tag/<tag>`), and only ever that.
 
 If an entry breaks any rule, the app ignores that entry and keeps the others. If the file isn't valid JSON, has no
 `schemaVersion`, or has a higher `schemaVersion`, the app ignores all of it. Either way the user sees no error,
@@ -80,6 +87,8 @@ when you publish an app release (see `RELEASING.md`). It is optional, and older 
 | `url` | yes | Exactly `https://github.com/jakemackie/ReSkateTrainerUpdater/releases/download/v<version>/ReSkateTrainerUpdater-<version>.zip`. Stricter than a Trainer URL: the tag must be `v<version>` and the file name must match. |
 | `sizeBytes` | yes | The exact size of the zip. |
 | `sha256` | yes | The SHA-256 of the zip. |
+| `published` | no | As for a Trainer. `set-app` writes today's date. |
+| `notes` | no | As for a Trainer. The Release workflow passes the first line of `release-note.txt` in the tagged commit, if the file exists. |
 
 A self-update installs code, so it is checked in more places than a Trainer:
 
@@ -98,8 +107,10 @@ itself without a click, and a copy started through `dotnet` (a developer's) neve
 
 ## What the app does
 
-On start-up the app makes one request for `latest.json`, with a 6-second limit. When the manifest arrives, and
-again every time a folder is inspected, `UpdateAdvisor.DescribeOnlineOffer` decides what to show.
+On start-up the app makes one request for `latest.json`, with a 6-second limit. It makes the same request again only
+when the user asks: the **Check again** button, or a click on the GitHub chip at the top. It never checks on a timer.
+When the manifest arrives, and again every time a folder is inspected, `UpdateAdvisor.DescribeOnlineOffer` decides
+what to show.
 
 | The chosen folder has | `latest.json` has | The user sees |
 | --- | --- | --- |
@@ -108,11 +119,17 @@ again every time a folder is inspected, `UpdateAdvisor.DescribeOnlineOffer` deci
 | Tournament 0.9.1 | `tournament` 0.9.2 | Blue UPDATE pill, "Update available, 0.9.1 → 0.9.2 (Tournament)", and a blue **UPDATE** tile |
 | Tournament 0.9.2 | `tournament` 0.9.2, any build | Green READY pill, "Ready to skate. You're running the newest version.", and a dark green **UP TO DATE** tile |
 | Tournament 0.9.5 | `tournament` 0.9.2 | Says your version is newer than the published one. The tile is dark. No downgrade is offered. |
-| Standard edition, any version | only `tournament` | "Trainer 0.9.1 installed. There is no online update for this edition." The tile is dark. Dropping a zip still works. |
-| Plain ReSkate, no Trainer | anything | "ReSkate without the Trainer". The tile is dark. |
-| A `ReSkate.dll` that can't be read | anything | Amber HEADS UP pill. The tile is dark. |
+| Standard edition, any version | `tournament` only | Blue SWITCH pill, "Another edition is available", and a blue **SWITCH** tile. It is only ever a deliberate switch: the download asks "This changes your Trainer from the Standard edition to the Tournament edition. Continue?" first, and the old files are backed up. It is never offered as an update. |
+| Standard edition | `standard` too | Treated like any other edition: an **UPDATE** when it is newer. |
+| Standard edition, any version | no `tournament` | "Trainer 0.9.1 installed. There is no online update for this edition." The tile is dark. Dropping a zip still works. |
+| Plain ReSkate, no Trainer | `tournament` | Green READY pill, "Add the Trainer", and a blue **ADD TRAINER** tile |
+| Plain ReSkate, no Trainer | no `tournament` | "ReSkate without the Trainer". The tile is dark. Dropping a zip still works. |
+| A `ReSkate.dll` that can't be read | anything | Amber HEADS UP pill, "Couldn't read your ReSkate files", with what to do next. The tile is dark. |
 | Steam's `skate.` folder | anything | Red PROBLEM pill. The app refuses this folder. |
-| Anything | unreachable, invalid, or offline | Grey OFFLINE pill, "Couldn't check for updates". No error colours, no dialog. One line in the activity log. |
+| Anything | unreachable, invalid, or offline | Grey OFFLINE pill, "Couldn't check for updates", and a **Check again** button. No error colours, no dialog. One line in the activity log. |
+
+While an update is shown, the card can also say "Published 3 days ago" and "What's new: ..." (from `published` and
+`notes`), and has a **Release notes** button.
 
 Clicking the button:
 
@@ -146,18 +163,28 @@ can publish anything to every user. So:
 
 The app makes two kinds of request, both to GitHub:
 
-- A GET for `latest.json`, once per start-up.
-- A GET for one zip, only when the user clicks the big tile: a Trainer (**UPDATE** or **INSTALL**) or a new version
-  of the app itself (**UPDATE APP**).
+- A GET for `latest.json`, once per start-up, and again only when the user presses **Check again** or clicks the
+  GitHub chip.
+- A GET for one zip, only when the user clicks the big tile: a Trainer (**UPDATE**, **INSTALL**, **ADD TRAINER** or
+  **SWITCH**) or a new version of the app itself (**UPDATE APP**).
 
 The only header it adds is `User-Agent: ReSkateTrainerUpdater/<version>`. It sends no identifiers, folder paths,
 installed versions or usage data. GitHub sees the user's IP address, as with any visit to github.com.
+
+Two buttons open a page in the user's own browser instead: **Release notes** (the release page of the Trainer or app
+on offer) and **Report a problem** (this repository's "new issue" page with the app and Windows version filled in).
+The app makes no request for them and sends no log; the user reads the page and submits it themselves.
+`OnlineSource.IsTrustedPageUrl` only lets the window open https pages of this repository.
+
+On the first run, when no folder is remembered, `ReSkateLocator` also looks through a few local folders for
+`ReSkateLauncher.exe` or `ReSkate.dll`. It only reads folder and file names, and nothing about it leaves the PC.
 
 ## Timing and caching
 
 - `raw.githubusercontent.com` may serve the old `latest.json` for about 5 minutes after you push.
 - Raw files are not the GitHub API, so the API's limit of 60 requests per hour per IP doesn't apply.
-- An app that is already open only checks once, at start-up. Users see a new release the next time they open it.
+- An app that is already open checks at start-up, and again when the user presses **Check again** or clicks the GitHub
+  chip. Otherwise users see a new release the next time they open it.
 
 ## Changing the format later
 

@@ -27,6 +27,41 @@ internal abstract class BufferedControl : Control
     /// <summary>Scales a 96-dpi pixel value to the current display scaling.</summary>
     protected float S(float value) => value * DeviceDpi / 96f;
 
+    /// <summary>
+    /// Gives a custom-drawn control a name and a role that a screen reader can announce. A control with the role PushButton or
+    /// CheckButton can also be pressed by assistive technology, which does the same as a click.
+    /// </summary>
+    public void Describe(string name, AccessibleRole role, string? description = null)
+    {
+        AccessibleName = name;
+        AccessibleRole = role;
+        AccessibleDescription = description;
+
+        // UI Automation names a window from its text, so give it the same words. No control draws this text except the buttons,
+        // which are the ones that set it in the first place.
+        if (Text != name) Text = name;
+    }
+
+    protected override AccessibleObject CreateAccessibilityInstance() => new PressableAccessibleObject(this);
+
+    // A drawn control has nothing for Windows to press. This gives assistive technology the same click everyone else gets.
+    private sealed class PressableAccessibleObject : ControlAccessibleObject
+    {
+        private readonly BufferedControl _owner;
+
+        public PressableAccessibleObject(BufferedControl owner) : base(owner) => _owner = owner;
+
+        private bool Pressable => _owner.AccessibleRole is AccessibleRole.PushButton or AccessibleRole.CheckButton;
+
+        public override string? DefaultAction => Pressable ? "Press" : base.DefaultAction;
+
+        public override void DoDefaultAction()
+        {
+            if (!Pressable || !_owner.Enabled) return;
+            _owner.BeginInvoke(() => _owner.OnClick(EventArgs.Empty));
+        }
+    }
+
     protected Color ParentBack => Parent?.BackColor ?? Theme.Bg;
     protected bool Hover { get; private set; }
     protected bool Pressed { get; private set; }

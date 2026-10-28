@@ -186,9 +186,16 @@ internal static class OnlineTests
             UpdateAdvisor.DescribeOnlineOffer(manifest, Folder(Tournament("0.9.5"))) is { Kind: OfferKind.UpToDate, CanDownload: false });
 
         var standard = new ReSkateVersion("2.1.1", "ReSkate", "0.9.1", "aaaaaaa", null);
-        Check("The standard edition gets no Tournament offer", UpdateAdvisor.DescribeOnlineOffer(manifest, Folder(standard)).Kind == OfferKind.None);
-        Check("Plain ReSkate gets no offer",
-            UpdateAdvisor.DescribeOnlineOffer(manifest, Folder(new ReSkateVersion("2.1.1", "ReSkate", null, null, null))).Kind == OfferKind.None);
+        Check("The standard edition is offered Tournament as a deliberate switch, not an update",
+            UpdateAdvisor.DescribeOnlineOffer(manifest, Folder(standard)) is { Kind: OfferKind.SwitchEdition, CanDownload: true, Entry.Edition: "tournament" });
+        Check("The standard edition gets no switch if Tournament isn't published",
+            UpdateAdvisor.DescribeOnlineOffer(new TrainerManifest().With(Entry(edition: "big-air")), Folder(standard)).Kind == OfferKind.None);
+        Check("If the standard edition is published, it is updated like any other",
+            UpdateAdvisor.DescribeOnlineOffer(new TrainerManifest().With(Entry(edition: "standard", version: "0.9.3")), Folder(standard)).Kind == OfferKind.Update);
+        Check("Plain ReSkate is offered the Trainer to add",
+            UpdateAdvisor.DescribeOnlineOffer(manifest, Folder(new ReSkateVersion("2.1.1", "ReSkate", null, null, null))) is { Kind: OfferKind.AddTrainer, CanDownload: true, Entry.Edition: "tournament" });
+        Check("Plain ReSkate gets nothing if no Trainer is published",
+            UpdateAdvisor.DescribeOnlineOffer(new TrainerManifest(), Folder(new ReSkateVersion("2.1.1", "ReSkate", null, null, null))).Kind == OfferKind.None);
         Check("An unreadable ReSkate.dll gets no offer", UpdateAdvisor.DescribeOnlineOffer(manifest, Folder(null, hasRuntime: true)).Kind == OfferKind.None);
         Check("Steam's skate. folder gets no offer",
             UpdateAdvisor.DescribeOnlineOffer(manifest, Folder(null, hasRuntime: false, steam: true)).Kind == OfferKind.None);
@@ -262,10 +269,21 @@ internal static class OnlineTests
         Check("Offline with an empty folder points at the zip", offlineEmpty.Headline == "Can't check GitHub" && !offlineEmpty.Tile.Enabled, offlineEmpty.Headline);
         Check("Nothing published yet says so",
             View(Folder(null, hasRuntime: false), m: new TrainerManifest()).Headline == "Nothing published yet");
-        Check("The standard edition is told there's no online update for it",
-            View(Folder(new ReSkateVersion("2.1.1", "ReSkate", "0.9.1", "aaaaaaa", null))) is { Headline: "Trainer 0.9.1 installed", Tile.Enabled: false });
-        Check("Plain ReSkate is told to use a zip",
-            View(Folder(new ReSkateVersion("2.1.1", "ReSkate", null, null, null))).Headline == "ReSkate without the Trainer");
+        var standardEdition = new ReSkateVersion("2.1.1", "ReSkate", "0.9.1", "aaaaaaa", null);
+        var switchView = View(Folder(standardEdition));
+        Check("The standard edition is told Tournament exists and may switch on purpose",
+            switchView is { Pill: "SWITCH", Tile: { Title: "SWITCH", Action: TileAction.DownloadAndInstall, Enabled: true } }
+            && switchView.Subline.Contains("Standard edition") && switchView.Subline.Contains("Tournament Edition 0.9.2") && switchView.Tile.Subtitle == "To Tournament 0.9.2", switchView.Subline);
+        Check("With nothing published, the standard edition is told there's no online update for it",
+            View(Folder(standardEdition), m: new TrainerManifest()) is { Headline: "Trainer 0.9.1 installed", Tile.Enabled: false });
+
+        var plainReSkate = new ReSkateVersion("2.1.1", "ReSkate", null, null, null);
+        var addView = View(Folder(plainReSkate));
+        Check("Plain ReSkate gets an ADD TRAINER tile that downloads",
+            addView is { Pill: "READY", Headline: "Add the Trainer", Tile: { Title: "ADD TRAINER", Action: TileAction.DownloadAndInstall, Style: TileStyle.Primary, Enabled: true } }
+            && addView.Subline.Contains("ReSkate 2.1.1 without the Trainer"), addView.Subline);
+        Check("With nothing published, plain ReSkate is told to use a zip",
+            View(Folder(plainReSkate), m: new TrainerManifest()).Headline == "ReSkate without the Trainer");
         Check("An unreadable ReSkate.dll is a warning", View(Folder(null, hasRuntime: true)) is { Pill: "HEADS UP", Severity: Severity.Warning });
 
         // A chosen zip takes over from the online offer.

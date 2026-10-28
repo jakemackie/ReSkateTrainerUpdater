@@ -35,6 +35,8 @@ internal sealed class StatusCard : BufferedControl
     public void Show(HomeView view)
     {
         _view = view;
+        string facts = string.Join(" ", view.Rows.Select(r => r.Text));
+        Describe($"Status: {view.Pill}. {view.Headline}. {view.Subline} {facts}".Trim(), AccessibleRole.StaticText);
         if (view.Severity == Severity.Working) _spinner.Start();
         else _spinner.Stop();
         Invalidate();
@@ -66,14 +68,20 @@ internal sealed class StatusCard : BufferedControl
         if (view.Subline.Length > 0)
             subHeight = Math.Min(TextPaint.Measure(g, view.Subline, Theme.Body, textWidth, wrap: true).Height, S(70));
 
+        // The small buttons along the bottom are separate controls laid over the card, so it only has to leave room for them.
+        float buttons = view.Links is { Count: > 0 } ? S(LinkRowHeight) : 0;
+
         if (view.Rows.Count == 0)
-            return new CardLayout(subHeight, 0, 0, Math.Max(S(MinHeight), S(SubTop) + subHeight + S(24)));
+            return new CardLayout(subHeight, 0, 0, Math.Max(S(MinHeight), S(SubTop) + subHeight + S(24)) + buttons);
 
         float dividerY = S(SubTop) + Math.Max(subHeight, S(17)) + S(14);
         float firstRow = dividerY + S(17);
         float height = firstRow + (view.Rows.Count - 1) * S(RowPitch) + S(24);
-        return new CardLayout(subHeight, dividerY, firstRow, Math.Max(S(MinHeight), height));
+        return new CardLayout(subHeight, dividerY, firstRow, Math.Max(S(MinHeight), height) + buttons);
     }
+
+    /// <summary>The height reserved at the bottom of the card for its row of small buttons, in 96-dpi pixels.</summary>
+    public const float LinkRowHeight = 50f;
 
     protected override void OnPaint(PaintEventArgs e)
     {

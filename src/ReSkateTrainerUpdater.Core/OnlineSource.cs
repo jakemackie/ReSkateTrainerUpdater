@@ -63,6 +63,39 @@ public static class OnlineSource
             && rest[1].EndsWith(".zip", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// The page of the Release a trusted download URL belongs to, for a "release notes" link. Null if the URL isn't a
+    /// trusted download URL, so a link can never point anywhere else.
+    /// </summary>
+    public static string? ReleasePageUrl(string? downloadUrl)
+    {
+        if (!IsTrustedDownloadUrl(downloadUrl)) return null;
+        var tag = new Uri(downloadUrl!).AbsolutePath[ReleaseDownloadPathPrefix.Length..].Split('/')[0];
+        return $"https://github.com/{Owner}/{Repository}/releases/tag/{tag}";
+    }
+
+    /// <summary>
+    /// True for an https page of this repository on github.com. The window only opens links that pass this, because it
+    /// opens them in the user's browser.
+    /// </summary>
+    public static bool IsTrustedPageUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url) || url.Contains("..", StringComparison.Ordinal) || url.Contains('\\')) return false;
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return false;
+        return uri.Scheme == Uri.UriSchemeHttps
+            && string.Equals(uri.Host, "github.com", StringComparison.OrdinalIgnoreCase)
+            && uri.IsDefaultPort
+            && uri.UserInfo.Length == 0
+            && uri.AbsolutePath.StartsWith($"/{Owner}/{Repository}/", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// The "new issue" page of this repository, with the title and text already filled in. The browser opens it; the
+    /// app sends nothing, and the user reads and submits it themselves.
+    /// </summary>
+    public static string NewIssueUrl(string title, string body) =>
+        $"https://github.com/{Owner}/{Repository}/issues/new?title={Uri.EscapeDataString(title)}&body={Uri.EscapeDataString(body)}";
+
     /// <summary>The manifest key for a Trainer whose binary names no edition.</summary>
     public const string StandardEdition = "standard";
 
