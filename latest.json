@@ -10,13 +10,15 @@
   },
   "editions": {
     "tournament": {
-      "version": "0.9.2",
-      "build": "578f597",
+      "version": "1.1.0",
+      "build": "396cf07",
       "reskateVersion": "2.1.1",
-      "url": "https://github.com/jakemackie/ReSkateTrainerUpdater/releases/download/trainer-tournament-0.9.2/ReSkate_Trainer_Tournament-0.9.2-on-v2.1.1.zip",
-      "sizeBytes": 17319112,
-      "sha256": "737af3e3bdd83687c4bb32242794655aa46dac5f7574f0f7eeeacfbe4cc75619"
+      "url": "https://github.com/jakemackie/ReSkateTrainerUpdater/releases/download/trainer-tournament-1.1.0/ReSkate_Trainer_Tournament-1.1.0-on-v2.1.1.zip",
+      "sizeBytes": 11583111,
+      "sha256": "e4de346befa94976be809f48e1eea0187d8ca94bface40644b00af9b661b660a",
+      "published": "2026-10-28",
+      "notes": "Dark Flip, Revert Flip and Grab Fix 0.4.10 updates."
     }
   },
-  "signature": "gO8HIBsefJz0vQr0/p8qs/sla15QWqc6PflIKxtcX3olOL6Vd8KlhFcw6A0KC5aU8NAoLe5XlpYmKtKTDAaO4A=="
+  "signature": "MyPgrx60blk10tV9bS2LVRTA260QdvZ11t6WEMH5gFAJTxqrm76Tw4283JdXQfZhZQp8ggzqwfap3oZ5JF92DQ=="
 }
