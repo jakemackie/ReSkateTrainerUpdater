@@ -1,1 +1,1 @@
-Signed update list, resumes interrupted downloads, winget and Scoop installs
+Behind-the-scenes release: faster builds and checks. Nothing changes in the app.
