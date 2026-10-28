@@ -1,1 +1,1 @@
-PLAY is always the big button; a new Trainer is explained in an Update available dialog
+Signed update list, resumes interrupted downloads, winget and Scoop installs
