@@ -4,7 +4,7 @@ using System.Text;
 
 namespace ReSkateTrainerUpdater.Core;
 
-/// <summary>Why a download was refused or failed. Every failure leaves nothing behind on disk.</summary>
+/// <summary>Why a download was refused or failed. Nothing is ever installed from a failed download. Only a dropped connection or a timeout keeps the part that arrived, so the next attempt can carry on.</summary>
 public enum DownloadFailure
 {
     None,
@@ -12,7 +12,7 @@ public enum DownloadFailure
     /// <summary>The URL is not a Release asset of the trusted repository. Nothing was requested.</summary>
     UntrustedUrl,
 
-    /// <summary>GitHub couldn't be reached, or the connection dropped.</summary>
+    /// <summary>GitHub couldn't be reached, or the connection dropped. What arrived is kept, and the next attempt continues from it.</summary>
     Network,
 
     /// <summary>GitHub answered with an error status, for example 404 when the Release asset doesn't exist.</summary>
@@ -24,7 +24,7 @@ public enum DownloadFailure
     /// <summary>The file's SHA-256 is not the one in latest.json.</summary>
     HashMismatch,
 
-    /// <summary>The download took too long or was cancelled.</summary>
+    /// <summary>The download took too long or was cancelled. What arrived is kept, and the next attempt continues from it.</summary>
     TimedOut,
 
     /// <summary>The file couldn't be written to the temp folder.</summary>
@@ -35,7 +35,8 @@ public enum DownloadFailure
 /// <param name="ZipPath">The verified zip, when <see cref="Failure"/> is None. The caller deletes its folder.</param>
 /// <param name="Failure">What went wrong, or None.</param>
 /// <param name="Detail">Technical detail for the activity log.</param>
-public sealed record DownloadResult(string? ZipPath, DownloadFailure Failure, string? Detail)
+/// <param name="KeptBytes">After a Network or TimedOut failure: how much was kept, so the next attempt continues from there.</param>
+public sealed record DownloadResult(string? ZipPath, DownloadFailure Failure, string? Detail, long KeptBytes = 0)
 {
     public bool Succeeded => Failure == DownloadFailure.None && ZipPath is not null;
 }
@@ -70,13 +71,16 @@ public static class TrainerDownloader
 
     /// <summary>
     /// Downloads and reads latest.json. Never throws: any failure, including no internet, comes back as a
-    /// result with a null manifest and a problem for the activity log.
+    /// result with a null manifest and a problem for the activity log. The file's signature is checked first
+    /// (<see cref="ManifestSignature"/>); a file that isn't signed by a trusted key is never read.
+    /// <paramref name="trustedKeys"/> is for tests; the app always uses the keys built into it.
     /// </summary>
     public static async Task<ManifestReadResult> FetchManifestAsync(
         HttpClient client,
         Uri? manifestUrl = null,
         TimeSpan? timeout = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IEnumerable<string>? trustedKeys = null)
     {
         manifestUrl ??= OnlineSource.ManifestUrl;
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -103,7 +107,11 @@ public static class TrainerDownloader
                     return Problem("latest.json is too large to be a real manifest.");
             }
 
-            return TrainerManifest.Parse(Encoding.UTF8.GetString(buffer.ToArray()));
+            var text = Encoding.UTF8.GetString(buffer.ToArray());
+            var signature = ManifestSignature.Verify(text, trustedKeys);
+            if (!signature.IsValid) return Problem(signature.Problem!);
+
+            return TrainerManifest.Parse(text);
         }
         catch (OperationCanceledException)
         {
@@ -122,9 +130,14 @@ public static class TrainerDownloader
     }
 
     /// <summary>
-    /// Downloads the zip for <paramref name="entry"/> into a new folder under <paramref name="parentFolder"/>
-    /// (the system temp folder by default), checking its size and SHA-256 against the entry as it arrives.
-    /// On any failure the partial file and its folder are deleted. Never throws.
+    /// Downloads the zip for <paramref name="entry"/> into a folder under <paramref name="parentFolder"/> (the system temp
+    /// folder by default), checking its size and SHA-256 against the entry. Never throws.
+    ///
+    /// A download that is cut off by the network or the time limit keeps what it received, in a folder named after the
+    /// file's hash. The next call for the same file asks the server for the rest with an HTTP Range request and carries
+    /// on from there. A drop is also retried up to <see cref="MaxAutomaticResumes"/> times within one call, as long as
+    /// each try got somewhere. The finished file is still checked as a whole, so a stale or damaged partial can never
+    /// be installed: on any other failure everything is deleted, and nothing is returned unless size and hash match.
     /// </summary>
     public static async Task<DownloadResult> DownloadAsync(
         HttpClient client,
@@ -132,7 +145,8 @@ public static class TrainerDownloader
         IProgress<DownloadProgress>? progress = null,
         string? parentFolder = null,
         TimeSpan? timeout = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        TimeSpan? retryDelay = null)
     {
         // Checked again here, so no code path can download from anywhere else.
         if (!entry.HasTrustedUrl)
@@ -141,89 +155,91 @@ public static class TrainerDownloader
             return Fail(DownloadFailure.SizeMismatch, $"latest.json gives an impossible size ({entry.SizeBytes} bytes).");
 
         // The folder name starts with the same prefix as the unpack folders, so a crash leaves nothing that
-        // TrainerPackageLoader.CleanUpStaleTempFolders won't eventually delete.
-        var folder = Path.Combine(parentFolder ?? Path.GetTempPath(), TrainerPackageLoader.TempPrefix + "download_" + Guid.NewGuid().ToString("N"));
+        // TrainerPackageLoader.CleanUpStaleTempFolders won't eventually delete. It is the same every time for the same
+        // file, which is how a later click finds the part that is already there.
+        var key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(entry.Sha256 + "|" + entry.Url)))[..16].ToLowerInvariant();
+        var folder = Path.Combine(parentFolder ?? Path.GetTempPath(), TrainerPackageLoader.TempPrefix + "download_" + key);
         var zipPath = Path.Combine(folder, SafeFileName(entry.FileName));
+        var partPath = zipPath + ".part";
 
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         deadline.CancelAfter(timeout ?? DownloadTimeout);
 
+        bool restartedFresh = false;
         try
         {
             Directory.CreateDirectory(folder);
+            if (File.Exists(zipPath)) File.Delete(zipPath);
 
-            using var response = await client.GetAsync(entry.Url, HttpCompletionOption.ResponseHeadersRead, deadline.Token)
-                .ConfigureAwait(false);
-            if (!response.IsSuccessStatusCode)
+            int drops = 0;
+            while (true)
             {
-                return Cleanup(DownloadFailure.HttpError,
-                    $"GitHub answered {(int)response.StatusCode} {response.ReasonPhrase} for {entry.Url}");
-            }
+                long offset = File.Exists(partPath) ? new FileInfo(partPath).Length : 0;
+                if (offset > entry.SizeBytes) { File.Delete(partPath); offset = 0; }
 
-            if (response.Content.Headers.ContentLength is long announced && announced != entry.SizeBytes)
-            {
-                return Cleanup(DownloadFailure.SizeMismatch,
-                    $"GitHub says the file is {announced} bytes, but latest.json says {entry.SizeBytes}.");
-            }
-
-            using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-            long received = 0;
-
-            // The streams are closed at the end of this block, before anything is checked or deleted.
-            await using (var source = await response.Content.ReadAsStreamAsync(deadline.Token).ConfigureAwait(false))
-            await using (var target = new FileStream(zipPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, useAsync: true))
-            {
-                var buffer = new byte[81920];
-                int read;
-                long lastReport = -1;
-                while ((read = await source.ReadAsync(buffer, deadline.Token).ConfigureAwait(false)) > 0)
+                try
                 {
-                    received += read;
-                    if (received > entry.SizeBytes) break; // too big: stop reading, reported below
-
-                    hash.AppendData(buffer, 0, read);
-                    await target.WriteAsync(buffer.AsMemory(0, read), deadline.Token).ConfigureAwait(false);
-
-                    // Report about every 256 KB, not on every chunk.
-                    if (received - lastReport >= 256 * 1024 || received == entry.SizeBytes)
+                    var step = await ReceiveAsync(client, entry, partPath, offset, progress, deadline.Token).ConfigureAwait(false);
+                    if (step.RestartFresh)
                     {
-                        lastReport = received;
-                        progress?.Report(new DownloadProgress(received, entry.SizeBytes));
+                        // The server can't or won't continue from there. Start again once; a second time is a real failure.
+                        if (restartedFresh) return Cleanup(DownloadFailure.HttpError, "The server would not send the file from the start.");
+                        restartedFresh = true;
+                        File.Delete(partPath);
+                        continue;
                     }
+                    if (step.Failure is { } problem) return Cleanup(problem.Failure, problem.Detail!);
                 }
-            }
+                catch (Exception ex) when (IsNetworkDrop(ex))
+                {
+                    long now = File.Exists(partPath) ? new FileInfo(partPath).Length : 0;
+                    if (now > offset && ++drops <= MaxAutomaticResumes)
+                    {
+                        await Task.Delay(retryDelay ?? TimeSpan.FromSeconds(1.5), deadline.Token).ConfigureAwait(false);
+                        continue;
+                    }
+                    return KeepPartial(DownloadFailure.Network, ex.Message);
+                }
 
-            if (received > entry.SizeBytes)
-            {
-                return Cleanup(DownloadFailure.SizeMismatch,
-                    $"The download is larger than the {entry.SizeBytes} bytes latest.json says, so it was stopped.");
-            }
-            if (received != entry.SizeBytes)
-            {
-                return Cleanup(DownloadFailure.SizeMismatch,
-                    $"Received {received} bytes, but latest.json says the file is {entry.SizeBytes} bytes.");
-            }
+                // The whole file is here. Its size and hash decide everything.
+                long total = new FileInfo(partPath).Length;
+                if (total > entry.SizeBytes)
+                {
+                    return Cleanup(DownloadFailure.SizeMismatch,
+                        $"The download is larger than the {entry.SizeBytes} bytes latest.json says, so it was stopped.");
+                }
+                if (total != entry.SizeBytes)
+                {
+                    return Cleanup(DownloadFailure.SizeMismatch,
+                        $"Received {total} bytes, but latest.json says the file is {entry.SizeBytes} bytes.");
+                }
 
-            var actual = Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
-            if (!string.Equals(actual, entry.Sha256, StringComparison.OrdinalIgnoreCase))
-            {
-                return Cleanup(DownloadFailure.HashMismatch,
-                    $"SHA-256 of the download is {actual}, but latest.json says {entry.Sha256}.");
-            }
+                string actual;
+                await using (var finished = new FileStream(partPath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true))
+                {
+                    actual = Convert.ToHexString(await SHA256.HashDataAsync(finished, deadline.Token).ConfigureAwait(false)).ToLowerInvariant();
+                }
+                if (!string.Equals(actual, entry.Sha256, StringComparison.OrdinalIgnoreCase))
+                {
+                    // A file finished from an old part is wrong if the part was (the published file may have been
+                    // replaced since). Try once from the start before giving up.
+                    if (offset > 0 && !restartedFresh)
+                    {
+                        restartedFresh = true;
+                        File.Delete(partPath);
+                        continue;
+                    }
+                    return Cleanup(DownloadFailure.HashMismatch,
+                        $"SHA-256 of the download is {actual}, but latest.json says {entry.Sha256}.");
+                }
 
-            return new DownloadResult(zipPath, DownloadFailure.None, $"SHA-256 matches latest.json ({actual}).");
+                File.Move(partPath, zipPath, overwrite: true);
+                return new DownloadResult(zipPath, DownloadFailure.None, $"SHA-256 matches latest.json ({actual}).");
+            }
         }
         catch (OperationCanceledException)
         {
-            return Cleanup(DownloadFailure.TimedOut, "The download took too long and was stopped.");
-        }
-        catch (HttpRequestException ex)
-        {
-            return Cleanup(DownloadFailure.Network, ex.Message);
-        }
-        catch (IOException ex) when (ex is HttpIOException || ex.InnerException is System.Net.Sockets.SocketException)
-        {
-            return Cleanup(DownloadFailure.Network, ex.Message);
+            return KeepPartial(DownloadFailure.TimedOut, "The download took too long and was stopped.");
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -236,7 +252,93 @@ public static class TrainerDownloader
             return Fail(failure, detail);
         }
 
+        // Keeps what arrived so the next click can carry on. With nothing received there is nothing to keep.
+        DownloadResult KeepPartial(DownloadFailure failure, string detail)
+        {
+            long kept = 0;
+            try { kept = File.Exists(partPath) ? new FileInfo(partPath).Length : 0; }
+            catch (IOException) { }
+            if (kept <= 0) return Cleanup(failure, detail);
+            return new DownloadResult(null, failure, detail, kept);
+        }
+
         static DownloadResult Fail(DownloadFailure failure, string detail) => new(null, failure, detail);
+    }
+
+    /// <summary>How many times one call carries on by itself after the connection drops part-way.</summary>
+    public const int MaxAutomaticResumes = 3;
+
+    /// <summary>What one request did: nothing special (the body arrived), a failure to clean up after, or "start again from byte 0".</summary>
+    private readonly record struct Received(bool RestartFresh = false, DownloadResult? Failure = null);
+
+    // The connection dropping or the host being unreachable: worth carrying on. A full disk or a cancel is not.
+    private static bool IsNetworkDrop(Exception ex) =>
+        ex is HttpRequestException ||
+        (ex is IOException io && (io is HttpIOException || io.InnerException is System.Net.Sockets.SocketException));
+
+    // One request: appends to the part file from `offset` to the end. The caller checks size and hash afterwards.
+    // Network trouble is thrown, with whatever arrived already saved in the part file.
+    private static async Task<Received> ReceiveAsync(HttpClient client, IPublishedFile entry, string partPath, long offset,
+        IProgress<DownloadProgress>? progress, CancellationToken token)
+    {
+        if (offset == entry.SizeBytes) return default; // a whole part is already here; only its hash is left to check
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, entry.Url);
+        if (offset > 0) request.Headers.Range = new RangeHeaderValue(offset, null);
+
+        using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false);
+
+        if (offset > 0 && response.StatusCode == System.Net.HttpStatusCode.RequestedRangeNotSatisfiable)
+            return new Received(RestartFresh: true);
+        if (!response.IsSuccessStatusCode)
+        {
+            return new Received(Failure: new DownloadResult(null, DownloadFailure.HttpError,
+                $"GitHub answered {(int)response.StatusCode} {response.ReasonPhrase} for {entry.Url}"));
+        }
+
+        // 206 continues from the offset. 200 means the server sent the whole file, whatever was asked for.
+        bool partial = offset > 0 && response.StatusCode == System.Net.HttpStatusCode.PartialContent;
+        if (partial)
+        {
+            var range = response.Content.Headers.ContentRange;
+            if (range?.From != offset) return new Received(RestartFresh: true);
+            if (range.Length is long whole && whole != entry.SizeBytes)
+            {
+                return new Received(Failure: new DownloadResult(null, DownloadFailure.SizeMismatch,
+                    $"GitHub says the file is {whole} bytes, but latest.json says {entry.SizeBytes}."));
+            }
+        }
+        long start = partial ? offset : 0;
+
+        if (response.Content.Headers.ContentLength is long announced && start + announced != entry.SizeBytes)
+        {
+            return new Received(Failure: new DownloadResult(null, DownloadFailure.SizeMismatch,
+                $"GitHub says the file is {start + announced} bytes, but latest.json says {entry.SizeBytes}."));
+        }
+
+        long received = start;
+        await using (var source = await response.Content.ReadAsStreamAsync(token).ConfigureAwait(false))
+        await using (var target = new FileStream(partPath, start > 0 ? FileMode.Append : FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true))
+        {
+            progress?.Report(new DownloadProgress(received, entry.SizeBytes));
+            var buffer = new byte[81920];
+            int read;
+            long lastReport = received;
+            while ((read = await source.ReadAsync(buffer, token).ConfigureAwait(false)) > 0)
+            {
+                received += read;
+                await target.WriteAsync(buffer.AsMemory(0, read), token).ConfigureAwait(false);
+                if (received > entry.SizeBytes) break; // too big: stop reading; the caller sees it is over the size
+
+                // Report about every 256 KB, not on every chunk.
+                if (received - lastReport >= 256 * 1024 || received == entry.SizeBytes)
+                {
+                    lastReport = received;
+                    progress?.Report(new DownloadProgress(received, entry.SizeBytes));
+                }
+            }
+        }
+        return default;
     }
 
     /// <summary>Deletes the folder a downloaded zip was saved in. Best effort.</summary>

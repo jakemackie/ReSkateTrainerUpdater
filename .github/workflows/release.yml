@@ -27,6 +27,17 @@ jobs:
             throw "Tag ${{ github.ref_name }} does not match version $version in Directory.Build.props"
           }
 
+      # The app ignores a latest.json that isn't signed, so a release that can't sign it would publish a version nobody is
+      # told about. Stop before building anything. Create the secret from the key file keygen wrote (docs/RELEASING.md).
+      - name: Check the manifest signing key is set
+        shell: pwsh
+        env:
+          RESKATE_MANIFEST_KEY: ${{ secrets.MANIFEST_SIGNING_KEY }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:RESKATE_MANIFEST_KEY)) {
+            throw "The repository secret MANIFEST_SIGNING_KEY is not set, so latest.json could not be signed. See docs/RELEASING.md."
+          }
+
       - name: Test
         run: dotnet run --project tests/ReSkateTrainerUpdater.Tests -c Release
 
@@ -65,6 +76,9 @@ jobs:
       # published: run the manifest tool's set-app command by hand (docs/RELEASING.md).
       - name: Publish this version for self-update in latest.json
         shell: pwsh
+        env:
+          # The manifest tool signs latest.json with this. Without a valid signature no installed copy would believe it.
+          RESKATE_MANIFEST_KEY: ${{ secrets.MANIFEST_SIGNING_KEY }}
         run: |
           git fetch origin main:refs/remotes/origin/main
           git checkout origin/main -- latest.json

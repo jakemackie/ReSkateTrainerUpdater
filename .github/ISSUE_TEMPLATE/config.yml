@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Problem with the ReSkate Trainer itself (not the updater)
+    url: https://github.com/andrewnakas/reskate-trainer/issues
+    about: The Trainer is made by someone else. Bugs inside the mod, such as crashes in game, belong to its authors.
+  - name: Problem with the ReSkate game
+    url: https://github.com/Dingo-Shenanigans/ReSkate/issues
+    about: The game and its launcher are made by someone else.

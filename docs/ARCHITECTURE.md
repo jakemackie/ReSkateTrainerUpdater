@@ -301,3 +301,21 @@ fails to load.
 Background work (unpacking, inspecting the folder, downloading, installing) runs on the thread pool. A generation counter
 throws away a result if the user picked something else while it was running. While an install or download runs,
 `_installing` blocks drops, browsing, and every button.
+
+## Why the release exe is not trimmed
+
+The self-update downloads the whole exe (about 64 MB zipped), because it is a self-contained single file. Publishing it
+trimmed (`build-release.ps1 -Trim`) gives about 30 MB (25 MB zipped), but it is **off**, because it breaks the app:
+
+- Microsoft doesn't support trimming WinForms, and the SDK refuses unless a private switch is set.
+- A trimmed build turns off COM interop, and without COM a dropped zip throws `TypeLoadException` (the "Unhandled exception"
+  dialog). Turning COM back on and keeping the WinForms assemblies whole fixed the in-process checks, but then the real
+  drop-target call crashed the exe with an access violation.
+- A smaller exe can't be shipped untested: a broken exe delivered by self-update can't update itself again.
+
+What exists to make it possible later: `ReSkateTrainerUpdater.exe --self-test <file>` (`SelfTest.cs`) builds the window out of sight and
+checks fonts, version info, settings JSON, signature checking, drop data, dialogs, accessibility and a real drop-target
+call. `build-release.ps1` runs it on every build and stops if it fails, and CI runs the script on every push. Settings
+JSON uses a source-generated serializer (`SettingsJson`) so it keeps working trimmed. To try trimming again: build with
+`-Trim`, make the self-test pass, then drag a zip in from Explorer by hand. Delta updates (for example Velopack) would
+shrink repeat downloads further, but replace the installer, `AppUpdater` and the trust rules, so they are a separate project.

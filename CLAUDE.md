@@ -38,10 +38,13 @@ Run every command from the repository root. You need the .NET 8 SDK.
 | Run the app | `dotnet run --project src/ReSkateTrainerUpdater` | Windows only |
 | Check `latest.json` (no network) | `dotnet run --project tools/ReSkateTrainerUpdater.ManifestTool -- check` | Any OS |
 | Verify `latest.json` against GitHub | `dotnet run --project tools/ReSkateTrainerUpdater.ManifestTool -- verify` | Windows only, needs internet |
+| Sign `latest.json` again / make a signing key | `... ManifestTool -- sign --key-file <key>` / `... -- keygen <file outside the repo>` | Any OS. See rule 20. |
 | Add a Trainer zip to `latest.json` | `dotnet run --project tools/ReSkateTrainerUpdater.ManifestTool -- add <zip>` | Windows only |
 | Record an app release in `latest.json` | `dotnet run --project tools/ReSkateTrainerUpdater.ManifestTool -- set-app <zip>` | Windows only. The Release workflow runs it. |
 | Build the release files (portable exe, zip and setup) | `powershell -ExecutionPolicy Bypass -File .\scripts\build-release.ps1` | Windows only, needs Inno Setup 6 (`winget install JRSoftware.InnoSetup`) |
 | Same, without the setup | `... build-release.ps1 -SkipInstaller` | Windows only |
+| Self-test the built exe (the script does this for you) | `ReSkateTrainerUpdater.exe --self-test <report file>` | Windows only. Builds the window out of sight, no network. |
+| Winget and Scoop manifests for a published release | `powershell -ExecutionPolicy Bypass -File .\scripts\make-package-manifests.ps1` | Windows only, needs internet. See `docs/RELEASING.md`. |
 
 The tests print one `pass` or `FAIL` line per check and end with `All N checks passed.` The exit code is non-zero
 if any check fails. A change is not finished until the build has no warnings and every check passes.
@@ -144,8 +147,9 @@ weakens the download checks, or breaks the release process.
     Dropping a zip must keep working with no internet.
 19. **No telemetry.** The app sends two kinds of request only: a GET for `latest.json` (on start-up, and again only when
     the user presses Check again or clicks the GitHub chip, never on a timer), and a GET for one zip (a Trainer, or a new
-    version of the app) when the user clicks the big tile. The only header added is the User-Agent
-    `ReSkateTrainerUpdater/<version>`. Don't add analytics, IDs, crash reporting, or anything else.
+    version of the app) when the user clicks the big tile. If that download is cut off, asking again for the rest of the same
+    zip (an HTTP Range request, a few automatic tries and then on the next click) is still that one GET. The only headers
+    added are the User-Agent `ReSkateTrainerUpdater/<version>` and, when carrying on, `Range`. Don't add analytics, IDs, crash reporting, or anything else.
     "Report a problem" hands an address to the user's browser: the app makes no request for it and never puts a log,
     path or any user data in the address (`DescribeProblemReportUrl` holds only the app and Windows versions).
 
@@ -188,8 +192,13 @@ A self-update installs code, so it is held to a stricter standard than a Trainer
 
 ### latest.json
 
-20. **Change `latest.json` only with the manifest tool** (`add`). The tests fail if the committed file isn't
-    valid or isn't byte-for-byte in the tool's canonical format. Never type a hash by hand.
+20. **Change `latest.json` only with the manifest tool** (`add`, `set-app`, `remove`, `sign`). The app ignores a manifest
+    without a valid signature from a key in `ManifestSignature.TrustedPublicKeys`, so a hand edit makes every installed copy
+    ignore the file. The tests fail if the committed file isn't valid, signed, and byte-for-byte in the tool's canonical
+    format. Never type a hash by hand. Never commit the private key (`keygen` refuses to write one inside the repository); it is
+    the repository secret `MANIFEST_SIGNING_KEY` and the maintainer's own backup. Never weaken `ManifestSignature.Verify` or make
+    `FetchManifestAsync` accept an unsigned file. Don't remove the old public key from `TrustedPublicKeys` unless the key is
+    known to be leaked and a newer app listing the new one is already out.
 21. **Adding an optional field** to a manifest entry doesn't need a schema change, because old apps ignore unknown
     fields. Update `ManifestEntry`, `TrainerManifest.Parse`, `CheckEntry` and `ToJson` together, and add tests.
     **A breaking change** (renaming or removing a field, or changing what one means) needs
@@ -224,6 +233,10 @@ A self-update installs code, so it is held to a stricter standard than a Trainer
 | `src/ReSkateTrainerUpdater.Core/OnlineSource.cs` | The trusted repo, the manifest URL, the trusted-download-URL rule, and edition keys |
 | `src/ReSkateTrainerUpdater.Core/TrainerManifest.cs` | `latest.json`: the model, the strict parser, the canonical writer |
 | `src/ReSkateTrainerUpdater.Core/AppUpdater.cs` | Replacing the running exe: `Stage`, `Swap`, `CleanUpLeftovers`, `CanUpdateInPlace` |
+| `src/ReSkateTrainerUpdater.Core/ManifestSignature.cs` | The signature on `latest.json`: trusted public keys, `Sign`, `Verify`, key generation |
+| `src/ReSkateTrainerUpdater/SelfTest.cs` | `--self-test`: builds the window out of sight and checks the risky parts. The build script runs it. |
+| `bucket/reskate-trainer-updater.json`, `scripts/make-package-manifests.ps1` | The Scoop manifest, and the script that updates it and writes the winget manifest |
+| `LICENSE`, `.github/ISSUE_TEMPLATE/` | The MIT licence, and the issue templates (`problem.md` must match what "Report a problem" prefills) |
 | `src/ReSkateTrainerUpdater.Core/TrainerDownloader.cs` | The HTTP client, fetching `latest.json`, downloading and checking a zip, and `CheckPackageMatches` |
 | `src/ReSkateTrainerUpdater.Core/TrainerPackageLoader.cs` | Unpacking a zip (nested zips, wrapper folders) and validating it |
 | `src/ReSkateTrainerUpdater.Core/ReSkateScanner.cs` | Reading versions from `ReSkate.dll` / `ReSkateLauncher.exe` |
@@ -269,6 +282,16 @@ A self-update installs code, so it is held to a stricter standard than a Trainer
 | Package | A zip that `TrainerPackageLoader` has unpacked to a temp folder and checked. |
 
 ## Things that look wrong but are deliberate
+
+- **The release exe is not trimmed, though trimming would cut it from about 70 MB to about 30 MB.** Trimming WinForms is
+  unsupported and breaks dropping a zip on the window (`TypeLoadException`, then a crash). `build-release.ps1 -Trim` and the
+  `PublishTrimmed` settings in the csproj are there for trying again, with the self-test as the gate. Don't turn it on for
+  releases until the self-test passes and a zip dragged in from Explorer has been tried by hand. See `docs/ARCHITECTURE.md`.
+- **A failed download can leave a `.part` file in the temp folder.** Only a dropped connection or a timeout keeps it, so the next
+  click can carry on. The finished file still has to match the size and hash, so it is never trusted.
+- **The licence is MIT and covers this project's own code only.** The fonts, the background picture and the Trainer have their
+  own terms (`THIRD-PARTY-NOTICES.md`, the README). The copyright line is "Jake Mackie (os_uk)".
+- **Issue forms ignore `?body=`, so "Report a problem" uses a Markdown template** (`problem.md`) and blank issues stay allowed.
 
 - **A Trainer is only ever *updated* within its own edition.** At first only Tournament is published. Plain ReSkate is
   offered **ADD TRAINER**, and an edition latest.json doesn't list (such as the standard one) is offered **SWITCH** to

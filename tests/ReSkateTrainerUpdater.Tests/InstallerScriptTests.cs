@@ -57,6 +57,23 @@ internal static class InstallerScriptTests
         Check("Invariant: the self-update still downloads the portable zip, which the setup name can't match",
             release.Contains("release/ReSkateTrainerUpdater-*.zip", StringComparison.Ordinal) && !"ReSkateTrainerUpdater-Setup-1.0.0.exe".EndsWith(".zip", StringComparison.Ordinal));
 
+        // Trimming would make the self-update much smaller, but a trimmed WinForms exe can't take a dropped zip yet. So it is
+        // off unless asked for, and the exe is always self-tested after it is built.
+        var csproj = Read(@"src\ReSkateTrainerUpdater\ReSkateTrainerUpdater.csproj");
+        var program = Read(@"src\ReSkateTrainerUpdater\Program.cs");
+        Check("Invariant: a build is only ever trimmed on request, and the script always runs the exe's self-test and stops on failure",
+            buildScript.Contains("PublishTrimmed=$trimValue", StringComparison.Ordinal) &&
+            buildScript.Contains("$trimValue = if ($Trim) { 'true' } else { 'false' }", StringComparison.Ordinal) &&
+            buildScript.Contains("'--self-test'", StringComparison.Ordinal) &&
+            Regex.IsMatch(buildScript, @"ExitCode -ne 0\) \{ throw"));
+        Check("Invariant: the self-test flag is handled before any window is created", program.IndexOf("SelfTest.Flag", StringComparison.Ordinal) is > 0 &&
+            program.IndexOf("SelfTest.Flag", StringComparison.Ordinal) < program.IndexOf("Application.Run", StringComparison.Ordinal));
+        Check("Invariant: trimming keeps the WinForms assemblies whole, because trimmed they can't load a dropped file",
+            csproj.Contains("TrimmerRootAssembly Include=\"System.Windows.Forms\"", StringComparison.Ordinal) &&
+            csproj.Contains("TrimmerRootAssembly Include=\"System.Drawing.Common\"", StringComparison.Ordinal));
+        Check("The CI workflow builds the release files, so the self-test runs on every push",
+            Read(@".github\workflows\ci.yml").Contains("build-release.ps1", StringComparison.Ordinal));
+
         Check("The wizard pictures exist", File.Exists(Path.Combine(root, @"installer\wizard-large.bmp")) && File.Exists(Path.Combine(root, @"installer\wizard-small.bmp")));
     }
 

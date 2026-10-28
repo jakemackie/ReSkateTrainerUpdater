@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace ReSkateTrainerUpdater.Core;
 
@@ -29,7 +30,7 @@ public sealed class UpdaterSettings
         try
         {
             settings = File.Exists(path)
-                ? JsonSerializer.Deserialize<UpdaterSettings>(File.ReadAllText(path)) ?? new UpdaterSettings()
+                ? JsonSerializer.Deserialize(File.ReadAllText(path), SettingsJson.Default.UpdaterSettings) ?? new UpdaterSettings()
                 : new UpdaterSettings();
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
@@ -47,11 +48,21 @@ public sealed class UpdaterSettings
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-            File.WriteAllText(_path, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }));
+            File.WriteAllText(_path, JsonSerializer.Serialize(this, SettingsJson.Default.UpdaterSettings));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // Settings are a convenience only.
         }
     }
+}
+
+/// <summary>
+/// Generated JSON code for the settings file. The release build is trimmed, and trimming removes the reflection that
+/// the ordinary serializer needs.
+/// </summary>
+[JsonSourceGenerationOptions(WriteIndented = true)]
+[JsonSerializable(typeof(UpdaterSettings))]
+internal sealed partial class SettingsJson : JsonSerializerContext
+{
 }

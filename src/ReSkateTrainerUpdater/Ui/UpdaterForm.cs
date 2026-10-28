@@ -78,8 +78,12 @@ internal sealed class UpdaterForm : Form, IBackdropHost
     private HomeView? _busyView;
     private bool _installing;
 
-    public UpdaterForm(bool justUpdated = false)
+    private readonly bool _quietStartup;
+
+    /// <param name="quietStartup">For the self-test only: when shown, skip the start-up work (the GitHub check, folder search and clean-ups).</param>
+    public UpdaterForm(bool justUpdated = false, bool quietStartup = false)
     {
+        _quietStartup = quietStartup;
         Text = AppInfo.Name;
         // Everything is placed by hand from the launcher's measurements and scaled by the display's DPI (see LayoutAll).
         AutoScaleMode = AutoScaleMode.None;
@@ -164,6 +168,7 @@ internal sealed class UpdaterForm : Form, IBackdropHost
     protected override void OnShown(EventArgs e)
     {
         base.OnShown(e);
+        if (_quietStartup) return;
         _ = Task.Run(TrainerPackageLoader.CleanUpStaleTempFolders);
 
         // After an app update, the previous version's exe is left beside this one. Remove it.
@@ -926,7 +931,7 @@ internal sealed class UpdaterForm : Form, IBackdropHost
         if (!download.Succeeded)
         {
             Log("Download failed: " + download.Detail);
-            failure = UpdateAdvisor.DescribeDownloadFailure(download.Failure);
+            failure = UpdateAdvisor.DescribeDownloadFailure(download.Failure, download.KeptBytes > 0);
         }
         else
         {
@@ -1023,7 +1028,7 @@ internal sealed class UpdaterForm : Form, IBackdropHost
         if (!download.Succeeded)
         {
             Log("Download failed: " + download.Detail);
-            failure = UpdateAdvisor.DescribeDownloadFailure(download.Failure);
+            failure = UpdateAdvisor.DescribeDownloadFailure(download.Failure, download.KeptBytes > 0);
         }
         else
         {

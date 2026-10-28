@@ -24,14 +24,25 @@ const string Usage = """
           Removes one edition (for example tournament) from latest.json, so the app stops offering it.
           Use this to pull a bad release quickly. Users who already installed it keep it.
 
+      sign [--manifest <path>]
+          Signs latest.json again as it is. Use it after keygen, or if the signature is missing or wrong.
+
+      keygen <private-key-file>
+          Makes a new signing key pair. The private key is written to the file you name (it must not exist yet) and
+          must be kept secret and backed up. The public key is printed, to paste into ManifestSignature.cs.
+
       check [--manifest <path>]
-          Checks latest.json is valid and in the canonical format. No network.
+          Checks latest.json is valid, in the canonical format, and signed by a key the app trusts. No network.
 
       verify [--manifest <path>]
           Downloads every zip latest.json lists from GitHub, exactly as the app would, and checks its size,
           SHA-256, version, edition and build. Run this after uploading and before (or right after) pushing.
 
     The manifest defaults to latest.json in the repository root.
+
+    add, set-app, remove and sign always sign what they write, because the app ignores an unsigned latest.json. They read
+    the private key from the file named by --key-file, or else from the RESKATE_MANIFEST_KEY environment variable (the
+    key's text itself, which is how the Release workflow passes its secret). With neither, they write nothing.
     """;
 
 if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
@@ -55,6 +66,7 @@ for (int i = 1; i < args.Length; i++)
         case "--manifest" when i + 1 < args.Length: manifestPath = args[++i]; break;
         case "--notes" when i + 1 < args.Length: notes = args[++i].Trim(); break;
         case "--published" when i + 1 < args.Length: published = args[++i]; break;
+        case "--key-file" when i + 1 < args.Length: Signing.KeyFile = args[++i]; break;
         default:
             if (args[i].StartsWith("--", StringComparison.Ordinal) || zipArgument is not null)
                 return UsageError($"Unexpected argument: {args[i]}");
@@ -73,6 +85,9 @@ return command switch
     "set-app" => UsageError("set-app needs the path of the app release zip."),
     "remove" when zipArgument is not null => Remove(zipArgument, manifestPath),
     "remove" => UsageError("remove needs an edition key, for example tournament."),
+    "sign" => Sign(manifestPath),
+    "keygen" when zipArgument is not null => KeyGen(zipArgument),
+    "keygen" => UsageError("keygen needs the path of a file to write the private key to."),
     "check" => Check(manifestPath),
     "verify" => await VerifyAsync(manifestPath),
     _ => UsageError($"Unknown command: {command}"),
@@ -155,7 +170,7 @@ static int Add(string zipPath, string? tag, string manifestPath, string? notes, 
         }
 
         manifest = manifest.With(entry);
-        File.WriteAllText(manifestPath, manifest.ToJson());
+        if (!WriteSigned(manifestPath, manifest)) return 1;
 
         Console.WriteLine();
         Console.WriteLine($"Updated {manifestPath}");
@@ -225,7 +240,7 @@ static int SetApp(string zipPath, string manifestPath, string? notes, string pub
             Console.WriteLine($"  Warning: latest.json had app version {previous.Version}, which is NEWER than this zip. Installed copies at {previous.Version} won't be offered this one.");
     }
 
-    File.WriteAllText(manifestPath, manifest.WithApp(entry).ToJson());
+    if (!WriteSigned(manifestPath, manifest.WithApp(entry))) return 1;
 
     Console.WriteLine($"Updated {manifestPath}");
     Console.WriteLine($"  app      {version}");
@@ -248,9 +263,81 @@ static int Remove(string edition, string manifestPath)
         return Error($"latest.json has no edition \"{edition}\". It has: {string.Join(", ", result.Manifest.Editions.Keys.DefaultIfEmpty("(none)"))}");
 
     var kept = result.Manifest.Without(edition);
-    File.WriteAllText(manifestPath, kept.ToJson());
+    if (!WriteSigned(manifestPath, kept)) return 1;
     Console.WriteLine($"Removed \"{edition}\" from {manifestPath}. Commit and push it to main; apps pick it up on their next start.");
     return 0;
+}
+
+// ---------- sign / keygen ----------
+
+static int Sign(string manifestPath)
+{
+    if (!File.Exists(manifestPath)) return Error($"No such file: {manifestPath}");
+    var result = TrainerManifest.Parse(File.ReadAllText(manifestPath));
+    if (result.Manifest is null || result.Problems.Count > 0)
+        return Error($"{manifestPath} has problems, so it wasn't signed:{Environment.NewLine}  " + string.Join(Environment.NewLine + "  ", result.Problems));
+    if (!WriteSigned(manifestPath, result.Manifest)) return 1;
+    Console.WriteLine($"Signed {manifestPath}");
+    return 0;
+}
+
+static int KeyGen(string keyFile)
+{
+    keyFile = Path.GetFullPath(keyFile);
+    if (File.Exists(keyFile)) return Error($"{keyFile} already exists. It is never overwritten, because that would lose the old key.");
+    if (FindRepoRoot() is { } root && keyFile.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+        return Error("Don't keep the private key inside the repository. Choose a path outside it.");
+
+    var (privateKey, publicKey) = ManifestSignature.GenerateKeyPair();
+    Directory.CreateDirectory(Path.GetDirectoryName(keyFile)!);
+    File.WriteAllText(keyFile, privateKey + Environment.NewLine);
+
+    Console.WriteLine($"Private key written to {keyFile}");
+    Console.WriteLine("  Keep it secret and keep a backup: whoever has it can publish updates, and without it you can't.");
+    Console.WriteLine("  The Release workflow reads it from the repository secret MANIFEST_SIGNING_KEY (the file's text).");
+    Console.WriteLine();
+    Console.WriteLine("Public key, for ManifestSignature.TrustedPublicKeys:");
+    Console.WriteLine(publicKey);
+    return 0;
+}
+
+// Signs the manifest and writes it. Writes nothing at all unless it can sign with a key the app trusts.
+static bool WriteSigned(string manifestPath, TrainerManifest manifest)
+{
+    string? keyText = Signing.KeyFile is { } file
+        ? (File.Exists(file) ? File.ReadAllText(file) : null)
+        : Environment.GetEnvironmentVariable("RESKATE_MANIFEST_KEY");
+    if (string.IsNullOrWhiteSpace(keyText))
+    {
+        Error(Signing.KeyFile is { } missing
+            ? $"The key file {missing} doesn't exist, so latest.json was not changed."
+            : "No signing key. Pass --key-file <path> or set RESKATE_MANIFEST_KEY. The app ignores an unsigned latest.json, so nothing was written.");
+        return false;
+    }
+
+    try
+    {
+        using var key = ManifestSignature.LoadPrivateKey(keyText);
+        if (!ManifestSignature.TrustedPublicKeys.Contains(ManifestSignature.PublicKeyOf(key)))
+        {
+            Error("That key isn't one the app trusts (see ManifestSignature.TrustedPublicKeys), so apps would ignore the result. Nothing was written.");
+            return false;
+        }
+
+        var signed = ManifestSignature.Sign(manifest.ToJson(), key);
+        if (!ManifestSignature.Verify(signed).IsValid)
+        {
+            Error("Internal check failed: the signature didn't verify. Nothing was written.");
+            return false;
+        }
+        File.WriteAllText(manifestPath, signed);
+        return true;
+    }
+    catch (Exception ex) when (ex is CryptographicException or FormatException)
+    {
+        Error("The signing key couldn't be read: " + ex.Message);
+        return false;
+    }
 }
 
 // ---------- check ----------
@@ -267,12 +354,16 @@ static int Check(string manifestPath)
                      string.Join(Environment.NewLine + "  ", result.Problems));
     }
 
-    if (text.Replace("\r\n", "\n") != result.Manifest.ToJson())
+    var signature = ManifestSignature.Verify(text);
+    if (!signature.IsValid)
+        return Error($"{manifestPath}: {signature.Problem} The app would ignore it. Run \"sign\" with the signing key.");
+
+    if (signature.Payload != result.Manifest.ToJson())
         return Error($"{manifestPath} is valid but not in the canonical format. Re-run \"add\" rather than editing it by hand.");
 
     Console.WriteLine(result.Manifest.Editions.Count == 0
-        ? "latest.json is valid. No editions are published, so the app offers no online install."
-        : "latest.json is valid: " + string.Join(", ", result.Manifest.Editions.Values.Select(e => e.TrainerText)));
+        ? "latest.json is valid and signed. No editions are published, so the app offers no online install."
+        : "latest.json is valid and signed: " + string.Join(", ", result.Manifest.Editions.Values.Select(e => e.TrainerText)));
     if (result.Manifest.App is { } app) Console.WriteLine($"  The updater itself: version {app.Version} is published for self-update.");
     return 0;
 }
@@ -395,4 +486,10 @@ static int UsageError(string message)
     Console.Error.WriteLine();
     Console.Error.WriteLine(Usage);
     return 2;
+}
+
+static class Signing
+{
+    /// <summary>The --key-file argument, if given.</summary>
+    public static string? KeyFile;
 }

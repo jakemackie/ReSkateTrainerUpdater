@@ -1,0 +1,16 @@
+name: Idea or suggestion
+description: Suggest a change or a new feature for the updater.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like the updater to do?
+      description: Say what you are trying to do, and what is awkward about it today.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Updater version
+      description: Shown under the GitHub chip at the top of the window, for example v1.4.1.

@@ -148,8 +148,16 @@ from your repository, and the zip must come from your repository's Releases.
 **It does not mean** the Trainer has been audited. You are vouching for where the file came from, not for the
 Trainer author's code.
 
-**The trust anchor is your GitHub account.** Anyone who can push to `main` and create Releases in this repository
-can publish anything to every user. So:
+**The manifest is signed.** The app ignores a `latest.json` that doesn't carry a valid signature from a key built into
+the app (see "The signature" below). So changing the file on GitHub, or anywhere between GitHub and the user, isn't
+enough to offer anyone a different download, because the file's hashes are what vouch for the zips. What the signature
+does not stop: someone who also holds the signing key, or someone replaying an older signed file (which can only hide
+a newer version, never offer a worse one, because the app only offers versions newer than the installed one).
+
+**The trust anchor is your GitHub account and the signing key.** Anyone who can push to `main` and create Releases in
+this repository can publish a release, but only a holder of the private key can make the app believe it. The key is a
+repository secret (`MANIFEST_SIGNING_KEY`) so the Release workflow can sign, which means anyone who can change the
+workflows can reach it. For more protection, keep the key off GitHub and sign by hand (docs/RELEASING.md). So:
 
 - Turn on two-factor authentication for the account.
 - Consider a branch protection rule on `main`, and don't give other people write access lightly.
@@ -163,9 +171,11 @@ The app makes two kinds of request, both to GitHub:
 - A GET for `latest.json`, once per start-up, and again only when the user presses **Check again** or clicks the
   GitHub chip.
 - A GET for one zip, only when the user clicks the big tile: a Trainer (**UPDATE**, **INSTALL**, **ADD TRAINER** or
-  **SWITCH**) or a new version of the app itself (**UPDATE APP**).
+  **SWITCH**) or a new version of the app itself (**UPDATE APP**). If the connection drops part-way, the app asks again
+  for the rest of the same file (see "Interrupted downloads" below): still GETs for that one zip, and nothing else.
 
-The only header it adds is `User-Agent: ReSkateTrainerUpdater/<version>`. It sends no identifiers, folder paths,
+The only header it adds is `User-Agent: ReSkateTrainerUpdater/<version>`, plus `Range: bytes=<n>-` on a request that
+carries on an interrupted download. It sends no identifiers, folder paths,
 installed versions or usage data. GitHub sees the user's IP address, as with any visit to github.com.
 
 **Report a problem** opens a page in the user's own browser: this repository's "new issue" page with the app and Windows
@@ -188,3 +198,41 @@ On the first run, when no folder is remembered, `ReSkateLocator` also looks thro
   parser, `CheckEntry`, `ToJson` and the tests together.
 - **A breaking change:** raise `TrainerManifest.SupportedSchemaVersion`. Release the new app first, then push the
   new-format manifest. Older apps will quietly show "Couldn't check for updates" until the user updates the app.
+
+## The signature
+
+`latest.json` ends with one extra member, `signature`, written by the manifest tool:
+
+```json
+  },
+  "signature": "<88 characters of base64>"
+}
+```
+
+- **Algorithm:** ECDSA, curve P-256, SHA-256, signature in the IEEE P1363 layout (r then s, 64 bytes, base64).
+- **What is signed:** the file's canonical text (what `TrainerManifest.ToJson` writes) exactly as it is *without* the
+  `signature` member: LF line endings, final newline. The member is always last, written as `,\n  "signature": "..."` before
+  the closing `}`. `ManifestSignature.Verify` rebuilds the signed text from the file and checks it, tolerating CRLF.
+- **Which keys:** the public keys in `ManifestSignature.TrustedPublicKeys`. A signature from any one of them is enough, so a
+  spare key kept offline can replace a lost or leaked one: ship an app that lists the new key, then sign with it.
+- **Where it is checked:** `TrainerDownloader.FetchManifestAsync`, before the file is parsed. A missing or wrong signature
+  gives a null manifest and a line in the activity log, like being offline: the status card says it couldn't check.
+- **Old apps:** versions up to 1.4.1 ignore fields they don't know, so they read a signed file exactly as before.
+- **Writing it:** `add`, `set-app`, `remove` and `sign` always sign, using `--key-file <path>` or the `RESKATE_MANIFEST_KEY`
+  environment variable, and refuse to write anything if the key is missing or isn't a trusted one. `check` and the tests
+  verify the committed file. `keygen <file>` makes a key pair; the private key never goes in the repository.
+
+## Interrupted downloads
+
+`TrainerDownloader.DownloadAsync` saves into a temp folder named after the file's hash, as `<name>.zip.part`. If the
+connection drops or the time limit passes, what arrived is kept (`DownloadResult.KeptBytes`), and:
+
+- within the same click it carries on by itself, up to 3 times, as long as each try got further;
+- on the next click it sends `Range: bytes=<size of the part>-` and appends the answer, if the server says `206` with a
+  matching `Content-Range`. A server that answers `200` (the whole file) or `416` just makes it start again from the start.
+
+Nothing about the checks changes: the finished file must match the size and SHA-256 in `latest.json`, so a damaged,
+stale or swapped part can never be installed. If a download finished from an old part fails its hash, it is deleted and
+tried once from the start before it counts as a failure. Every other failure deletes the folder. Parts older than two
+hours are removed at start-up (`CleanUpStaleTempFolders`). GitHub's release downloads support Range (checked: `206` with
+`Content-Range: bytes 1000-1099/63779579`).

@@ -512,9 +512,18 @@ public static class UpdateAdvisor
         return $"Online check: newest published Trainer is {latest}.";
     }
 
-    /// <summary>The message when a download fails. Every case says nothing was changed, because nothing was.</summary>
-    public static Advice DescribeDownloadFailure(DownloadFailure failure) => failure switch
+    /// <summary>
+    /// The message when a download fails. Every case says nothing was changed, because nothing was. When the part that
+    /// arrived was kept (<paramref name="progressKept"/>), a dropped connection or a timeout says that clicking again carries on.
+    /// </summary>
+    public static Advice DescribeDownloadFailure(DownloadFailure failure, bool progressKept = false) => failure switch
     {
+        DownloadFailure.Network when progressKept => new Advice(
+            "The connection dropped before the download finished. Click again and it carries on where it stopped. Nothing was changed.",
+            Severity.Warning),
+        DownloadFailure.TimedOut when progressKept => new Advice(
+            "The download took too long and was paused. Click again and it carries on where it stopped. Nothing was changed.",
+            Severity.Warning),
         DownloadFailure.UntrustedUrl => new Advice(
             "The update link doesn't point to this app's GitHub releases, so it was refused. Nothing was changed.",
             Severity.Error),

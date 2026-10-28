@@ -13,6 +13,7 @@ This is an unofficial helper. It isn't made by, or affiliated with, the ReSkate 
 ## Using it
 
 1. Download `ReSkateTrainerUpdater-Setup-<version>.exe` from the [latest release](../../releases/latest) and run it. It installs the updater for you only (no administrator needed), adds it to your Start Menu, and lists it under Settings, Apps, where you can uninstall it. Prefer no installer? The `.zip` on the same page is the portable exe: unzip it anywhere you can write to. If Windows shows a blue "Windows protected your PC" screen, see [below](#if-windows-says-windows-protected-your-pc).
+   Prefer a package manager? `winget install jakemackie.ReSkateTrainerUpdater` (once it is accepted into winget's list), or with Scoop: `scoop bucket add reskate https://github.com/jakemackie/ReSkateTrainerUpdater` then `scoop install reskate/reskate-trainer-updater`. The app also updates itself, so the package manager may list an older version than the one running.
 2. Open the updater. The first time, it looks in the usual places for your ReSkate folder and offers the one it finds: click **USE IT**. If it doesn't find it, click the folder box and choose the folder with `ReSkateLauncher.exe`. The app remembers it for next time.
 3. Click the big blue tile. With a Trainer installed it is **PLAY**, whether you're current or not. When a newer Trainer is published, the status card says so and a small **Update available** button explains it: press that, then **UPDATE** (or **NOT NOW** to keep playing). The tile says **INSTALL** for an empty folder, **ADD TRAINER** if you have plain ReSkate, or **SWITCH** if you have another edition and want to move to Tournament (it asks first).
 4. If the game or its launcher is open, the tile becomes **CLOSE GAME**. It tells you which program is in the way and, only if you say yes, closes it and carries on with the install.
@@ -35,7 +36,7 @@ The setup and the exe aren't code-signed, because a signing certificate costs mo
 1. Click **More info** (the small link in the blue window).
 2. A **Run anyway** button appears. Click it.
 
-Every download's SHA-256 is checked by the app itself before anything is installed, and all the source is in this repository to read.
+Every download's SHA-256 is checked by the app itself before anything is installed, and all the source is in this repository to read. The list of updates (`latest.json`) is digitally signed too, and the app ignores any copy that isn't signed with the key built into it, so a tampered list can't point you at a different download. If a download is interrupted, clicking again carries on where it stopped.
 
 ## What it checks
 
@@ -74,7 +75,7 @@ It sends nothing about you, your PC or your game: no IDs, folder paths, versions
 
 ## Credits and licences
 
-This updater was made by **os_uk**.
+This updater was made by **os_uk** and is released under the [MIT licence](LICENSE): you may use, copy, change and share it, including in your own projects, as long as you keep the copyright notice and licence text with it (that is how you credit the original). The licence covers this project's own code only. The fonts and the background picture have their own terms, listed in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md), and the Trainer is GPL-3.0 software by someone else.
 
 The ReSkate Trainer is GPL-3.0 software by its authors. The Trainer zips published here are redistributed unmodified, with their `LICENSE.txt` and `README.txt` included. Source code:
 

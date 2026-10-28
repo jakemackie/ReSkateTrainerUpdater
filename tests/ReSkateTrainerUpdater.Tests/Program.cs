@@ -17,9 +17,11 @@ InstallerTests.Run(workspace);
 AdvisorTests.Run(workspace);
 SettingsTests.Run(workspace);
 OnlineTests.Run(workspace);
+SignatureTests.Run();
 AppUpdateTests.Run(workspace);
 ComfortTests.Run(workspace);
 InstallerScriptTests.Run();
+RepositoryTests.Run();
 
 Console.WriteLine();
 Console.WriteLine(TestKit.Failures == 0

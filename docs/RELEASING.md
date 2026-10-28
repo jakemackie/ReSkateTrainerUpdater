@@ -28,7 +28,15 @@ release notes. Building the setup needs Inno Setup 6, which GitHub's Windows run
 2. **Check the Actions token can write.** Go to Settings → Actions → General → Workflow permissions. Either
    setting works, because `release.yml` asks for `contents: write` itself. But if an organisation policy
    forces read-only, the Release workflow will fail at its last step.
-3. **Optional: protect `main`.** Go to Settings → Branches and add a rule that requires the CI check to pass
+3. **Create the manifest signing key and store it as a secret.** The app ignores a `latest.json` that isn't signed, and
+   the Release workflow stops at the start if it can't sign. Once, on your PC:
+   `dotnet run --project tools/ReSkateTrainerUpdater.ManifestTool -- keygen C:\Users\<you>\.reskate-signing\manifest-signing.key`
+   (a path outside the repository), paste the printed public key into `ManifestSignature.TrustedPublicKeys`, then add
+   the key file's text as the repository secret `MANIFEST_SIGNING_KEY` (Settings → Secrets and variables → Actions).
+   **Back the key file up somewhere safe.** Lose it and you can't publish; leak it and anyone can. Recommended: make a
+   second pair the same way, list its public key too, and keep that private key offline as a spare. To sign a manifest
+   change yourself, pass `--key-file <path>` to `add`, `set-app`, `remove` or `sign`.
+4. **Optional: protect `main`.** Go to Settings → Branches and add a rule that requires the CI check to pass
    before merging. CI includes `verify`, which downloads every published zip and checks it.
 
 ## Releasing a new version of the app
@@ -198,7 +206,24 @@ version until the fixed one is published. Don't delete a Release that `latest.js
 
 - Commit a zip, exe or DLL to the repository. A zip about 17 MB in size stays in git history forever, every
   clone downloads it, and GitHub blocks files over 100 MB. Release assets cost nothing.
-- Edit `latest.json` by hand, except to remove the `app` block in an emergency. The tests fail if it isn't in the
-  tool's exact format.
+- Edit `latest.json` by hand. Any change breaks its signature, so every installed copy ignores it, and the tests fail.
+  Use the manifest tool (`remove` pulls an entry; `sign` re-signs).
 - Replace the zip on an existing Release with a different file. The hash in `latest.json` would no longer
   match, and every download would be refused. Publish a new version with a new tag instead.
+
+## Package managers
+
+After an app release is published, run `powershell -ExecutionPolicy Bypass -File .\scripts\make-package-manifests.ps1`.
+It downloads the release's zip and setup (so the hashes are of what people really get), rewrites
+`bucket\reskate-trainer-updater.json` (the Scoop manifest, which lives in this repository, so commit it) and writes the winget
+manifest to `release\packaging\winget\<version>\`.
+
+- **Scoop:** `scoop bucket add reskate https://github.com/jakemackie/ReSkateTrainerUpdater`, then
+  `scoop install reskate/reskate-trainer-updater`. The manifest has `checkver`/`autoupdate`, so Scoop's own tooling can also
+  bump it.
+- **winget:** check with `winget validate --manifest release\packaging\winget\<version>`, then copy the folder into a fork of
+  `microsoft/winget-pkgs` as `manifests/j/jakemackie/ReSkateTrainerUpdater/<version>/` and open a pull request (or run
+  `wingetcreate submit`). The first one is reviewed by hand; later ones are mostly automatic. An unsigned setup may be flagged
+  by their checks. The pull request is a public submission under your name, so do it yourself.
+
+The app also updates itself, so a package manager may list an older version than the one running. That is harmless.

@@ -1,0 +1,27 @@
+{
+    "version":  "1.4.1",
+    "description":  "Installs and updates the ReSkate Trainer in your ReSkate folder (unofficial helper).",
+    "homepage":  "https://github.com/jakemackie/ReSkateTrainerUpdater",
+    "license":  "MIT",
+    "architecture":  {
+                         "64bit":  {
+                                       "url":  "https://github.com/jakemackie/ReSkateTrainerUpdater/releases/download/v1.4.1/ReSkateTrainerUpdater-1.4.1.zip",
+                                       "hash":  "f31d2d28b7ee29d73a7255675509ce5b1c4b2b11249fe5868e2294b958bd623a"
+                                   }
+                     },
+    "shortcuts":  [
+                      [
+                          "ReSkateTrainerUpdater.exe",
+                          "ReSkate Trainer Updater"
+                      ]
+                  ],
+    "notes":  "The app also updates itself from inside its window, so scoop may list an older version than the one running.",
+    "checkver":  "github",
+    "autoupdate":  {
+                       "architecture":  {
+                                            "64bit":  {
+                                                          "url":  "https://github.com/jakemackie/ReSkateTrainerUpdater/releases/download/v$version/ReSkateTrainerUpdater-$version.zip"
+                                                      }
+                                        }
+                   }
+}

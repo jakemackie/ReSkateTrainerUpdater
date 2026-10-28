@@ -30,6 +30,22 @@
     <EmbeddedResource Include="Assets\Fonts\Montserrat-SemiBold.ttf" LogicalName="font.montserrat-semibold" />
   </ItemGroup>
 
+  <!-- Trimming (build-release.ps1 -Trim) takes the exe from about 70 MB to about 30 MB, but Microsoft does not support trimming
+       WinForms, and it does not work yet: the window can't take a dropped zip (TypeLoadException, then a crash with COM
+       switched on). It is OFF for releases. These settings only let an experiment get as far as running; the exe's
+       self-test (SelfTest.cs) is what shows whether it works. -->
+  <PropertyGroup Condition="'$(PublishTrimmed)' == 'true'">
+    <_SuppressWinFormsTrimError>true</_SuppressWinFormsTrimError>
+    <!-- Trimming turns COM interop off by default, and a file dragged in from Explorer arrives as a COM object. Without
+         this the window throws a TypeLoadException the moment a zip is dropped on it. -->
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(PublishTrimmed)' == 'true'">
+    <TrimmerRootAssembly Include="System.Windows.Forms" />
+    <TrimmerRootAssembly Include="System.Windows.Forms.Primitives" />
+    <TrimmerRootAssembly Include="System.Drawing.Common" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\ReSkateTrainerUpdater.Core\ReSkateTrainerUpdater.Core.csproj" />
   </ItemGroup>

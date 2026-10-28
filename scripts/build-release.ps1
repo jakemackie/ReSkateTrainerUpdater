@@ -13,11 +13,17 @@
 .PARAMETER SkipInstaller
     Only build the exe and the zip. For quick local builds; a release always builds the setup too.
 
+.PARAMETER Trim
+    Publish the exe trimmed: about 30 MB instead of about 70 MB, which would make the self-update download much smaller.
+    NOT used for releases yet. Trimming WinForms isn't supported by Microsoft, and the exe's self-test currently fails on a
+    trimmed build (dropping a zip onto the window crashes it). Don't release a trimmed exe until that passes AND a zip
+    dragged in from Explorer has been tried by hand. See docs/ARCHITECTURE.md.
+
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File .\scripts\build-release.ps1
 #>
 
-param([switch]$SkipInstaller)
+param([switch]$SkipInstaller, [switch]$Trim)
 
 $ErrorActionPreference = 'Stop'
 
@@ -33,13 +39,23 @@ if (-not $version) { throw "No <Version> found in $props" }
 if (Test-Path $output) { Remove-Item $output -Recurse -Force }
 
 Write-Host "Building ReSkate Trainer Updater $version ..."
+# Not trimmed unless asked (-Trim): see the parameter's notes. The csproj explains what trimming involves.
+$trimValue = if ($Trim) { 'true' } else { 'false' }
 dotnet publish $project -c Release -r win-x64 --self-contained true `
-    -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true `
+    -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -p:PublishTrimmed=$trimValue `
     -p:DebugType=none -p:DebugSymbols=false `
     -o (Join-Path $output 'publish')
 if ($LASTEXITCODE -ne 0) { throw 'dotnet publish failed' }
 
 $exe = Join-Path $output 'publish\ReSkateTrainerUpdater.exe'
+
+# Run the exe once, out of sight, to prove the window builds and the parts trimming can break still work. Nothing is
+# sent over the network and no settings are written. A release must never go out if this fails.
+$selfTestReport = Join-Path $output 'self-test.txt'
+$selfTest = Start-Process -FilePath $exe -ArgumentList '--self-test', "`"$selfTestReport`"" -Wait -PassThru
+if (Test-Path $selfTestReport) { Get-Content $selfTestReport | ForEach-Object { Write-Host "  self-test: $_" } }
+if ($selfTest.ExitCode -ne 0) { throw "The published exe failed its self-test (exit code $($selfTest.ExitCode)). See above. If you used -Trim, that is probably the cause." }
+
 $zip = Join-Path $output "ReSkateTrainerUpdater-$version.zip"
 # The font licences must travel with the exe, so the notices file goes in the zip too.
 $notices = Join-Path $repoRoot 'THIRD-PARTY-NOTICES.md'

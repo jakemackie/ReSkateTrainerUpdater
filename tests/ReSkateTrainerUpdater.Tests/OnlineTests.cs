@@ -19,6 +19,7 @@ internal static class OnlineTests
         Manifest();
         Offers(workspace);
         DownloadsAsync(workspace).GetAwaiter().GetResult();
+        ResumingAsync(workspace).GetAwaiter().GetResult();
     }
 
     private static ManifestEntry Entry(string version = "0.9.2", string edition = "tournament", string url = GoodUrl,
@@ -132,11 +133,15 @@ internal static class OnlineTests
         }
         else
         {
-            var committed = TrainerManifest.Parse(File.ReadAllText(repoManifest));
+            var committedText = File.ReadAllText(repoManifest);
+            var committed = TrainerManifest.Parse(committedText);
             Check("The committed latest.json is valid", committed.Manifest is not null && committed.Problems.Count == 0,
                 string.Join("; ", committed.Problems));
+            var committedSignature = ManifestSignature.Verify(committedText);
+            Check("Invariant: the committed latest.json is signed by a key the app trusts, or no installed app would believe it",
+                committedSignature.IsValid, committedSignature.Problem + " Run the manifest tool's sign command.");
             Check("The committed latest.json is in the canonical format",
-                committed.Manifest is not null && File.ReadAllText(repoManifest).Replace("\r\n", "\n") == committed.Manifest.ToJson(),
+                committed.Manifest is not null && committedSignature.Payload == committed.Manifest.ToJson(),
                 "Run the manifest tool, or match its formatting exactly.");
         }
     }
@@ -205,7 +210,7 @@ internal static class OnlineTests
             UpdateAdvisor.DescribeManifestCheck(new ManifestReadResult(null, new[] { "no internet" })).Contains("Dropping a zip still works"));
         Check("A successful check names the newest version",
             UpdateAdvisor.DescribeManifestCheck(new ManifestReadResult(manifest, Array.Empty<string>())).Contains("Tournament 0.9.2"));
-        var everyFailure = Enum.GetValues<DownloadFailure>().Where(f => f != DownloadFailure.None).Select(UpdateAdvisor.DescribeDownloadFailure).ToList();
+        var everyFailure = Enum.GetValues<DownloadFailure>().Where(f => f != DownloadFailure.None).Select(f => UpdateAdvisor.DescribeDownloadFailure(f)).ToList();
         Check("Every download failure says nothing was changed", everyFailure.All(a => a.Message.Contains("Nothing was changed")));
         Check("A hash mismatch is an error", UpdateAdvisor.DescribeDownloadFailure(DownloadFailure.HashMismatch).Severity == Severity.Error);
 
@@ -445,21 +450,217 @@ internal static class OnlineTests
         }
 
         Section("Reading latest.json online");
-        var manifestJson = new TrainerManifest().With(entry).ToJson();
+        using var testKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var testKeys = new[] { ManifestSignature.PublicKeyOf(testKey) };
+        var manifestJson = ManifestSignature.Sign(new TrainerManifest().With(entry).ToJson(), testKey);
         async Task<ManifestReadResult> Fetch(Func<HttpRequestMessage, HttpResponseMessage> respond, TimeSpan? timeout = null)
         {
             using var client = TrainerDownloader.CreateClient(new FakeServer(respond));
-            return await TrainerDownloader.FetchManifestAsync(client, null, timeout);
+            return await TrainerDownloader.FetchManifestAsync(client, null, timeout, trustedKeys: testKeys);
         }
 
         var fetched = await Fetch(_ => FakeServer.Ok(System.Text.Encoding.UTF8.GetBytes(manifestJson)));
         Check("latest.json is fetched and read", fetched.Manifest?.Find("tournament") == entry, string.Join("; ", fetched.Problems));
+        var unsigned = await Fetch(_ => FakeServer.Ok(System.Text.Encoding.UTF8.GetBytes(new TrainerManifest().With(entry).ToJson())));
+        Check("Invariant: an unsigned latest.json is ignored, even though it is otherwise perfect",
+            unsigned.Manifest is null && unsigned.Problems.Count == 1 && unsigned.Problems[0].Contains("no signature"), string.Join("; ", unsigned.Problems));
+        var otherEntry = entry with { Sha256 = new string('b', 64) };
+        var swapped = await Fetch(_ => FakeServer.Ok(System.Text.Encoding.UTF8.GetBytes(manifestJson.Replace(entry.Sha256, otherEntry.Sha256))));
+        Check("Invariant: a latest.json whose download hash was changed after signing is ignored",
+            swapped.Manifest is null, string.Join("; ", swapped.Problems));
         Check("A server error is skipped quietly", (await Fetch(_ => new HttpResponseMessage(HttpStatusCode.InternalServerError))).Manifest is null);
         Check("No internet is skipped quietly", (await Fetch(_ => throw new HttpRequestException("offline"))).Manifest is null);
         Check("A huge response is refused",
             (await Fetch(_ => FakeServer.Ok(new byte[TrainerManifest.MaxManifestBytes + 1], sendLength: false))).Manifest is null);
         Check("A slow response is skipped",
             (await Fetch(_ => FakeServer.Ok(System.Text.Encoding.UTF8.GetBytes(manifestJson), delay: TimeSpan.FromSeconds(5)), TimeSpan.FromMilliseconds(100))).Manifest is null);
+    }
+
+    // ---------- Resuming ----------
+
+    private static async Task ResumingAsync(Workspace workspace)
+    {
+        Section("Resuming interrupted downloads");
+
+        var zip = workspace.NewZip("resume", folder => FakeBinary.WriteRelease(folder));
+        var bytes = File.ReadAllBytes(zip);
+        var sha = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+        var entry = Entry(size: bytes.Length, sha: sha);
+        var quick = TimeSpan.Zero;
+
+        // A server that honours Range. `dropAfter` makes each answer fail after that many bytes, like a dropped connection.
+        var ranges = new List<long?>();
+        HttpResponseMessage Serve(HttpRequestMessage request, byte[] file, int? dropAfter = null, bool honourRange = true)
+        {
+            long? asked = request.Headers.Range?.Ranges.First().From;
+            ranges.Add(asked);
+            long from = honourRange ? asked ?? 0 : 0;
+            var content = new StreamContent(new DroppingStream(file[(int)from..], dropAfter));
+            content.Headers.ContentLength = file.Length - from;
+            var response = new HttpResponseMessage(from > 0 ? HttpStatusCode.PartialContent : HttpStatusCode.OK) { Content = content };
+            if (from > 0) response.Content.Headers.ContentRange = new System.Net.Http.Headers.ContentRangeHeaderValue(from, file.Length - 1, file.Length);
+            return response;
+        }
+
+        void CleanUp(string parent)
+        {
+            foreach (var folder in Directory.GetDirectories(parent))
+                TrainerDownloader.DeleteDownloadFolder(Path.Combine(folder, "x.zip"));
+        }
+
+        // 1. A drop part-way is carried on automatically, from where it stopped.
+        var parent1 = workspace.NewFolder("resume_1");
+        using (var client = TrainerDownloader.CreateClient(new FakeServer(r => Serve(r, bytes, dropAfter: bytes.Length / 3))))
+        {
+            var progress = new List<long>();
+            var result = await TrainerDownloader.DownloadAsync(client, entry, new SyncProgress<DownloadProgress>(p => progress.Add(p.Received)), parent1, null, default, quick);
+            Check("A connection that drops part-way is carried on automatically and the file is correct",
+                result.Succeeded && File.ReadAllBytes(result.ZipPath!).SequenceEqual(bytes), result.Detail);
+            Check("The later requests ask only for the rest, with a Range header",
+                ranges.Count >= 2 && ranges[0] is null && ranges.Skip(1).All(f => f > 0), string.Join(",", ranges));
+            Check("Progress carries on from where it stopped instead of going back to zero",
+                progress.Zip(progress.Skip(1), (a, b) => b >= a).All(x => x), string.Join(",", progress));
+            TrainerDownloader.DeleteDownloadFolder(result.ZipPath!);
+        }
+
+        // 2. Too many drops: the part is kept, and the next click finishes the job.
+        ranges.Clear();
+        var parent2 = workspace.NewFolder("resume_2");
+        DownloadResult first;
+        using (var client = TrainerDownloader.CreateClient(new FakeServer(r => Serve(r, bytes, dropAfter: Math.Max(1, bytes.Length / 10)))))
+            first = await TrainerDownloader.DownloadAsync(client, entry, null, parent2, null, default, quick);
+        Check("After repeated drops it stops, and says how much it kept",
+            first is { Failure: DownloadFailure.Network, ZipPath: null, KeptBytes: > 0 } && first.KeptBytes < bytes.Length, first.Detail);
+        Check("Only a few automatic tries are made", ranges.Count == TrainerDownloader.MaxAutomaticResumes + 1, ranges.Count.ToString());
+        Check("The part that arrived is still on disk", Directory.GetFiles(parent2, "*.part", SearchOption.AllDirectories).Length == 1);
+
+        ranges.Clear();
+        using (var client = TrainerDownloader.CreateClient(new FakeServer(r => Serve(r, bytes))))
+        {
+            var second = await TrainerDownloader.DownloadAsync(client, entry, null, parent2, null, default, quick);
+            Check("Clicking again finishes the download from the kept part",
+                second.Succeeded && File.ReadAllBytes(second.ZipPath!).SequenceEqual(bytes), second.Detail);
+            Check("It asked only for the missing bytes", ranges.Count == 1 && ranges[0] == first.KeptBytes, string.Join(",", ranges));
+            TrainerDownloader.DeleteDownloadFolder(second.ZipPath!);
+        }
+        Check("Nothing is left behind once it has finished", Directory.GetDirectories(parent2).Length == 0);
+
+        // 3. A server that ignores Range just sends everything: still correct.
+        var parent3 = workspace.NewFolder("resume_3");
+        using (var client = TrainerDownloader.CreateClient(new FakeServer(r => Serve(r, bytes, dropAfter: bytes.Length / 2, honourRange: false))))
+        {
+            var drops = await TrainerDownloader.DownloadAsync(client, entry, null, parent3, null, default, quick);
+            Check("A server that ignores Range can't corrupt the file", drops.ZipPath is null && drops.KeptBytes > 0, drops.Detail);
+        }
+        using (var client = TrainerDownloader.CreateClient(new FakeServer(r => Serve(r, bytes, honourRange: false))))
+        {
+            var full = await TrainerDownloader.DownloadAsync(client, entry, null, parent3, null, default, quick);
+            Check("If the server answers a Range request with the whole file, the download restarts cleanly",
+                full.Succeeded && File.ReadAllBytes(full.ZipPath!).SequenceEqual(bytes), full.Detail);
+            TrainerDownloader.DeleteDownloadFolder(full.ZipPath!);
+        }
+
+        // 4. The server says the range is wrong (416): start again from the beginning.
+        var parent4 = workspace.NewFolder("resume_4");
+        using (var client = TrainerDownloader.CreateClient(new FakeServer(r => Serve(r, bytes, dropAfter: bytes.Length / 2, honourRange: false))))
+            await TrainerDownloader.DownloadAsync(client, entry, null, parent4, null, default, quick);
+        using (var client = TrainerDownloader.CreateClient(new FakeServer(r =>
+            r.Headers.Range is not null ? new HttpResponseMessage(HttpStatusCode.RequestedRangeNotSatisfiable) : Serve(r, bytes))))
+        {
+            var again = await TrainerDownloader.DownloadAsync(client, entry, null, parent4, null, default, quick);
+            Check("A 416 answer means start again from the beginning", again.Succeeded && File.ReadAllBytes(again.ZipPath!).SequenceEqual(bytes), again.Detail);
+            TrainerDownloader.DeleteDownloadFolder(again.ZipPath!);
+        }
+
+        // 5. Invariant: a kept part that came from a different file can never end up installed.
+        var parent5 = workspace.NewFolder("resume_5");
+        var other = bytes.ToArray();
+        other[0] ^= 0xFF;
+        using (var client = TrainerDownloader.CreateClient(new FakeServer(r => Serve(r, other, dropAfter: bytes.Length / 2, honourRange: false))))
+        {
+            var stale = await TrainerDownloader.DownloadAsync(client, entry, null, parent5, null, default, quick);
+            Check("A download of a different file is cut off and kept", stale.KeptBytes > 0, stale.Detail);
+        }
+        ranges.Clear();
+        using (var client = TrainerDownloader.CreateClient(new FakeServer(r => Serve(r, bytes))))
+        {
+            var healed = await TrainerDownloader.DownloadAsync(client, entry, null, parent5, null, default, quick);
+            Check("Invariant: when the kept part belongs to another file, the file is only returned after a clean second try matches",
+                healed.Succeeded && File.ReadAllBytes(healed.ZipPath!).SequenceEqual(bytes) && ranges.Count == 2 && ranges[1] is null,
+                healed.Detail + " " + string.Join(",", ranges));
+            TrainerDownloader.DeleteDownloadFolder(healed.ZipPath!);
+        }
+
+        var parent6 = workspace.NewFolder("resume_6");
+        using (var client = TrainerDownloader.CreateClient(new FakeServer(r => Serve(r, other, dropAfter: bytes.Length / 2, honourRange: false))))
+            await TrainerDownloader.DownloadAsync(client, entry, null, parent6, null, default, quick);
+        using (var client = TrainerDownloader.CreateClient(new FakeServer(r => Serve(r, other))))
+        {
+            var bad = await TrainerDownloader.DownloadAsync(client, entry, null, parent6, null, default, quick);
+            Check("Invariant: a resumed download with the wrong SHA-256 is refused and everything is deleted",
+                bad is { Failure: DownloadFailure.HashMismatch, ZipPath: null } && Directory.GetDirectories(parent6).Length == 0, bad.Detail);
+        }
+
+        // 6. No bytes at all: nothing worth keeping.
+        var parent7 = workspace.NewFolder("resume_7");
+        using (var client = TrainerDownloader.CreateClient(new FakeServer(_ => throw new HttpRequestException("offline"))))
+        {
+            var none = await TrainerDownloader.DownloadAsync(client, entry, null, parent7, null, default, quick);
+            Check("A failure before any bytes arrive leaves nothing behind",
+                none is { Failure: DownloadFailure.Network, KeptBytes: 0 } && Directory.GetDirectories(parent7).Length == 0);
+        }
+
+        // 7. The request carries a Range header only when continuing.
+        var rangeAtStart = new List<bool>();
+        using (var client = TrainerDownloader.CreateClient(new FakeServer(r => { rangeAtStart.Add(r.Headers.Range is not null); return FakeServer.Ok(bytes); })))
+        {
+            var plain = await TrainerDownloader.DownloadAsync(client, entry, null, workspace.NewFolder("resume_8"), null, default, quick);
+            Check("A fresh download sends no Range header", plain.Succeeded && rangeAtStart.SequenceEqual(new[] { false }));
+            TrainerDownloader.DeleteDownloadFolder(plain.ZipPath!);
+        }
+
+        Check("A kept download tells the user that clicking again carries on",
+            UpdateAdvisor.DescribeDownloadFailure(DownloadFailure.Network, progressKept: true).Message.Contains("carries on where it stopped") &&
+            UpdateAdvisor.DescribeDownloadFailure(DownloadFailure.TimedOut, progressKept: true).Message.Contains("carries on where it stopped") &&
+            UpdateAdvisor.DescribeDownloadFailure(DownloadFailure.Network, progressKept: true).Message.Contains("Nothing was changed"));
+        Check("Without a kept part the old wording stays",
+            !UpdateAdvisor.DescribeDownloadFailure(DownloadFailure.Network).Message.Contains("carries on"));
+
+        foreach (var parent in new[] { parent1, parent2, parent3, parent4, parent5, parent6, parent7 }) CleanUp(parent);
+    }
+}
+
+/// <summary>A response body that fails like a dropped connection after a set number of bytes. With no limit it just ends.</summary>
+internal sealed class DroppingStream : Stream
+{
+    private readonly byte[] _data;
+    private readonly int? _dropAfter;
+    private int _position;
+
+    public DroppingStream(byte[] data, int? dropAfter) { _data = data; _dropAfter = dropAfter; }
+
+    public override bool CanRead => true;
+    public override bool CanSeek => false;
+    public override bool CanWrite => false;
+    public override long Length => throw new NotSupportedException();
+    public override long Position { get => _position; set => throw new NotSupportedException(); }
+    public override void Flush() { }
+    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+    public override void SetLength(long value) => throw new NotSupportedException();
+    public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+    public override int Read(byte[] buffer, int offset, int count)
+    {
+        int limit = _dropAfter is { } drop && drop < _data.Length ? drop : _data.Length;
+        if (_position >= limit)
+        {
+            if (limit < _data.Length) throw new HttpIOException(HttpRequestError.ResponseEnded, "The connection was closed.");
+            return 0;
+        }
+        int n = Math.Min(count, limit - _position);
+        Array.Copy(_data, _position, buffer, offset, n);
+        _position += n;
+        return n;
     }
 }
 
